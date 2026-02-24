@@ -61,7 +61,7 @@
 - [x] 7.6 Add `comando history` command to show watch history
 - [x] 7.7 Add `comando resume` command
 - [x] 7.8 Add `--help` and verbose output
-- [ ] 7.9 Write integration tests for full CLI flow
+- [x] 7.9 Write integration tests for full CLI flow - **DONE: 16 tests, 80% coverage**
 - [ ] 7.10 Manual test: full user journey (needs live magnet link)
 
 ## 8. Integration & Polish
@@ -88,8 +88,8 @@
 - Task 7 depends on 2-6 being mostly complete
 - Manual testing at each major phase recommended
 
-## Testing Phase Results (Completed)
-- **Total**: 115 tests passing, 77% coverage
+## Testing Phase Results (Completed) ✅
+- **Total**: 131 tests passing, 93% coverage
 - **Test files created**:
   - test_db.py: 13 tests (98% coverage)
   - test_episode_selector.py: 30 tests (98% coverage)
@@ -97,7 +97,10 @@
   - test_quality_selector.py: 25 tests with mocked typer (100% coverage)
   - test_config.py: 15 tests for XDG directories (100% coverage)
   - test_playback.py: 14 tests for streaming (100% coverage)
-- **Modules at 100%**: models, config, quality_selector, playback
+  - test_cli.py: 16 tests for CLI integration (80% coverage)
+- **Modules at 100%**: __init__, models, config, quality_selector, playback
+- **Modules at 98%+**: db, episode_selector
+- **Modules at 90%+**: scraper, cli
 - **Refactoring**: Simplified playback to use `webtorrent --mpv` directly
 
 ## Site Analysis Results (Completed)
