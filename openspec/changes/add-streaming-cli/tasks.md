@@ -13,7 +13,7 @@
 - [x] 2.3 Create search function: query string → list of titles with metadata
 - [x] 2.4 Parse search results: extract title, URL, media_type (movie/series)
 - [x] 2.5 Create metadata fetcher: fetch title page → episodes list, poster, synopsis
-- [x] 2.6 Write unit tests for scraper (mock Scrapling responses) - **ANALYZED with Python script**
+- [x] 2.6 Write unit tests for scraper (mock Scrapling responses) - **DONE: 18 tests, 90% coverage**
 - [x] 2.7 Study site structure with playwright-cli and refine HTML parsing patterns - **DONE: Updated to use BeautifulSoup for HTML parsing**
 
 ## 3. Data Models & Storage
@@ -21,15 +21,15 @@
 - [x] 3.2 Setup SQLite database schema (titles, watch_history tables)
 - [x] 3.3 Create database module (src/comando_cli/db.py) with CRUD operations
 - [x] 3.4 Implement watch history tracking: add_watch_record(), get_last_watched()
-- [ ] 3.5 Write unit tests for database operations
-- [ ] 3.6 Verify schema migrations work correctly
+- [x] 3.5 Write unit tests for database operations - **DONE: 13 tests, 98% coverage**
+- [x] 3.6 Verify schema migrations work correctly - **DONE: Tests verify schema creation and UNIQUE constraints**
 
 ## 4. Episode Selection
 - [x] 4.1 Create episode_selector.py module
 - [x] 4.2 Implement parser for -e flag: "2", "2-5", "2-", "-5" → episode list
 - [x] 4.3 Validate episode ranges against actual episode count
 - [x] 4.4 Create error messages for invalid ranges
-- [ ] 4.5 Write unit tests for episode selector (all range formats)
+- [x] 4.5 Write unit tests for episode selector (all range formats) - **DONE: 30 tests, 98% coverage**
 - [ ] 4.6 Manual test: series with 10 episodes, test all range formats
 
 ## 5. Quality & Language Selection
@@ -39,7 +39,7 @@
 - [x] 5.4 Implement interactive menu: quality selection (list of options)
 - [x] 5.5 Implement interactive menu: language selection (list of options)
 - [x] 5.6 Return selected magnet link from combined selection
-- [ ] 5.7 Write unit tests for menu flow
+- [x] 5.7 Write unit tests for menu flow - **DONE: 25 tests, 100% coverage**
 - [ ] 5.8 Manual test: select different quality/language combinations
 
 ## 6. Torrent Streaming & Playback
