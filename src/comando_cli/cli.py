@@ -12,7 +12,9 @@ from .playback import PlaybackError, TorrentPlayer
 from .quality_selector import select_quality_and_language, select_title
 from .scraper import GratistorrentScraper, ScraperError
 
-app = typer.Typer(help="Comando CLI - Stream movies and TV series from the command line.")
+app = typer.Typer(
+    help="Comando CLI - Stream movies and TV series from the command line."
+)
 
 # Global state for config and database
 config = None
@@ -20,7 +22,11 @@ db = None
 
 
 @app.callback()
-def setup(verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output")) -> None:
+def setup(
+    verbose: bool = typer.Option(
+        False, "--verbose", "-v", help="Enable verbose output"
+    ),
+) -> None:
     """Initialize application."""
     global config, db
 
@@ -53,12 +59,95 @@ def search(query: str = typer.Argument(..., help="Search query")) -> None:
         for i, title in enumerate(results, 1):
             typer.echo(f"{i}. {title.name} ({title.media_type.value})")
 
-        # Interactive selection with fzf would go here
-        # For now, just show results
-
     except ScraperError as e:
         typer.echo(f"❌ Search error: {e}", err=True)
         raise typer.Exit(1)
+
+
+def _play_title(
+    title_detail, episodes: Optional[str], scraper: GratistorrentScraper
+) -> None:
+    """Core play logic shared between watch and resume commands."""
+    episodes_to_play: list[int] = []
+    if title_detail.media_type == MediaType.SERIES:
+        episode_numbers = {
+            opt.episode for opt in title_detail.quality_options if opt.episode
+        }
+        total_episodes = max(episode_numbers) if episode_numbers else 1
+
+        if episodes:
+            try:
+                episode_range = parse_episode_syntax(episodes, total_episodes)
+                typer.echo(f"✓ Episodes: {episode_range.episodes}")
+                episodes_to_play = episode_range.episodes
+            except Exception as e:
+                typer.echo(f"❌ Invalid episode syntax: {e}", err=True)
+                return
+        else:
+            typer.echo("✓ No episode specified, starting from first available")
+            episodes_to_play = [1]
+
+    first_episode = episodes_to_play[0] if episodes_to_play else None
+    quality_option = select_quality_and_language(title_detail, episode=first_episode)
+    if not quality_option:
+        typer.echo("❌ No quality selected")
+        return
+
+    # Save to history with URLs
+    magnet_to_save = (
+        quality_option.magnet_link
+        if title_detail.media_type == MediaType.MOVIE
+        else None
+    )
+    db.add_watch_record(
+        title_id=title_detail.id,
+        title_name=title_detail.name,
+        media_type=title_detail.media_type,
+        title_url=title_detail.url,
+        magnet_url=magnet_to_save,
+        last_episode=first_episode,
+    )
+
+    player = TorrentPlayer(config)
+
+    if not episodes_to_play:
+        # Movie: play directly
+        player.play_torrent(quality_option.magnet_link, title_detail, episode=None)
+    else:
+        # Series: play each episode, reusing same quality+language for subsequent ones
+        for i, ep_num in enumerate(episodes_to_play):
+            if i == 0:
+                ep_option = quality_option
+            else:
+                ep_option = next(
+                    (
+                        opt
+                        for opt in title_detail.quality_options
+                        if opt.episode == ep_num
+                        and opt.quality == quality_option.quality
+                        and opt.language == quality_option.language
+                    ),
+                    None,
+                )
+                if not ep_option:
+                    typer.echo(
+                        f"⚠️  No {quality_option.quality} {quality_option.language} option for episode {ep_num}, skipping"
+                    )
+                    continue
+
+            try:
+                player.play_torrent(ep_option.magnet_link, title_detail, episode=ep_num)
+                # Update last_episode after each episode played
+                db.add_watch_record(
+                    title_id=title_detail.id,
+                    title_name=title_detail.name,
+                    media_type=title_detail.media_type,
+                    title_url=title_detail.url,
+                    last_episode=ep_num,
+                )
+            except KeyboardInterrupt:
+                typer.echo("\n⏹️  Stopped")
+                break
 
 
 @app.command()
@@ -100,75 +189,7 @@ def watch(
             typer.echo("❌ Failed to fetch metadata")
             return
 
-        # Handle episodes for series
-        episodes_to_play: list[int] = []
-        if title_detail.media_type == MediaType.SERIES:
-            # Infer total episodes from quality options (each has an episode number)
-            episode_numbers = set()
-            for opt in title_detail.quality_options:
-                if opt.episode:
-                    episode_numbers.add(opt.episode)
-            total_episodes = max(episode_numbers) if episode_numbers else 1
-
-            if episodes:
-                try:
-                    episode_range = parse_episode_syntax(episodes, total_episodes)
-                    typer.echo(f"✓ Episodes: {episode_range.episodes}")
-                    episodes_to_play = episode_range.episodes
-                except Exception as e:
-                    typer.echo(f"❌ Invalid episode syntax: {e}", err=True)
-                    return
-            else:
-                typer.echo("✓ No episode specified, starting from first available")
-                episodes_to_play = [1]
-
-        # Select quality and language for the first episode (or movie)
-        first_episode = episodes_to_play[0] if episodes_to_play else None
-        quality_option = select_quality_and_language(title_detail, episode=first_episode)
-        if not quality_option:
-            typer.echo("❌ No quality selected")
-            return
-
-        # Record in watch history
-        db.add_watch_record(
-            title_id=title_detail.id,
-            title_name=title_detail.name,
-            media_type=title_detail.media_type,
-        )
-
-        player = TorrentPlayer(config)
-
-        if not episodes_to_play:
-            # Movie: play directly
-            player.play_torrent(quality_option.magnet_link, title_detail, episode=None)
-        else:
-            # Series: play each episode, reusing same quality+language for subsequent ones
-            for i, ep_num in enumerate(episodes_to_play):
-                if i == 0:
-                    ep_option = quality_option
-                else:
-                    # Auto-select same quality+language for this episode
-                    ep_option = next(
-                        (
-                            opt
-                            for opt in title_detail.quality_options
-                            if opt.episode == ep_num
-                            and opt.quality == quality_option.quality
-                            and opt.language == quality_option.language
-                        ),
-                        None,
-                    )
-                    if not ep_option:
-                        typer.echo(
-                            f"⚠️  No {quality_option.quality} {quality_option.language} option for episode {ep_num}, skipping"
-                        )
-                        continue
-
-                try:
-                    player.play_torrent(ep_option.magnet_link, title_detail, episode=ep_num)
-                except KeyboardInterrupt:
-                    typer.echo("\n⏹️  Stopped")
-                    break
+        _play_title(title_detail, episodes, scraper)
 
     except ScraperError as e:
         typer.echo(f"❌ Scraper error: {e}", err=True)
@@ -190,8 +211,12 @@ def history() -> None:
 
         typer.echo("\n📺 Watch History:\n")
         for i, record in enumerate(records, 1):
-            episode_info = f" (Ep. {record.last_episode})" if record.last_episode else ""
-            typer.echo(f"{i}. {record.title_name}{episode_info} - {record.last_watched_date.strftime('%Y-%m-%d %H:%M')}")
+            episode_info = (
+                f" (Ep. {record.last_episode})" if record.last_episode else ""
+            )
+            typer.echo(
+                f"{i}. {record.title_name}{episode_info} - {record.last_watched_date.strftime('%Y-%m-%d %H:%M')}"
+            )
 
     except Exception as e:
         typer.echo(f"❌ Error reading history: {e}", err=True)
@@ -200,7 +225,7 @@ def history() -> None:
 
 @app.command()
 def resume() -> None:
-    """Resume watching the last episode."""
+    """Resume watching the last title."""
     try:
         last_watch = db.get_last_watched()
 
@@ -209,8 +234,47 @@ def resume() -> None:
             return
 
         typer.echo(f"▶️  Resuming: {last_watch.title_name}")
-        # Full resumption logic would go here
 
+        scraper = GratistorrentScraper()
+
+        if last_watch.media_type == MediaType.MOVIE and last_watch.magnet_url:
+            # Movie with saved magnet: play directly without re-fetching
+            from .models import Title
+
+            title_stub = Title(
+                id=last_watch.title_id,
+                name=last_watch.title_name,
+                media_type=last_watch.media_type,
+                url=last_watch.title_url or "",
+            )
+            player = TorrentPlayer(config)
+            player.play_torrent(last_watch.magnet_url, title_stub, episode=None)
+
+        elif last_watch.title_url:
+            # Series (or movie without magnet): re-fetch metadata from saved URL
+            typer.echo("📥 Fetching metadata...")
+            title_detail = scraper.fetch_metadata(last_watch.title_url)
+            if not title_detail:
+                typer.echo("❌ Failed to fetch metadata")
+                return
+
+            # For series: suggest continuing from next episode
+            next_episode = None
+            if last_watch.last_episode:
+                next_episode = str(last_watch.last_episode + 1)
+                typer.echo(f"✓ Continuing from episode {next_episode}")
+
+            _play_title(title_detail, next_episode, scraper)
+
+        else:
+            typer.echo("❌ No URL saved for this title. Please search and watch again.")
+
+    except ScraperError as e:
+        typer.echo(f"❌ Scraper error: {e}", err=True)
+        raise typer.Exit(1)
+    except PlaybackError as e:
+        typer.echo(f"❌ Playback error: {e}", err=True)
+        raise typer.Exit(1)
     except Exception as e:
         typer.echo(f"❌ Error resuming: {e}", err=True)
         raise typer.Exit(1)

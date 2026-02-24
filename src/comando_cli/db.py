@@ -11,7 +11,7 @@ from .models import MediaType, WatchHistory
 class Database:
     """SQLite database for watch history."""
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, db_path: Path):
         """Initialize database connection.
@@ -24,51 +24,85 @@ class Database:
         self._init_schema()
 
     def _init_schema(self) -> None:
-        """Initialize database schema if it doesn't exist."""
+        """Initialize database schema if it doesn't exist, and run migrations."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
 
-            # Check if tables exist
             cursor.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='watch_history'"
             )
-            if cursor.fetchone():
-                return  # Tables already exist
+            table_exists = cursor.fetchone() is not None
 
-            # Create watch_history table
-            cursor.execute(
-                """
-                CREATE TABLE watch_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title_id TEXT NOT NULL,
-                    title_name TEXT NOT NULL,
-                    media_type TEXT NOT NULL,
-                    last_episode INTEGER,
-                    last_watched_date DATETIME NOT NULL,
-                    duration_seconds INTEGER DEFAULT 0,
-                    position_seconds INTEGER DEFAULT 0,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(title_id)
+            if not table_exists:
+                cursor.execute(
+                    """
+                    CREATE TABLE watch_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title_id TEXT NOT NULL,
+                        title_name TEXT NOT NULL,
+                        media_type TEXT NOT NULL,
+                        title_url TEXT,
+                        magnet_url TEXT,
+                        last_episode INTEGER,
+                        last_watched_date DATETIME NOT NULL,
+                        duration_seconds INTEGER DEFAULT 0,
+                        position_seconds INTEGER DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(title_id)
+                    )
+                    """
                 )
-                """
-            )
+                cursor.execute(
+                    "CREATE INDEX idx_title_id ON watch_history(title_id)"
+                )
+                cursor.execute(
+                    "CREATE INDEX idx_last_watched ON watch_history(last_watched_date DESC)"
+                )
+                cursor.execute(
+                    "CREATE TABLE schema_version (version INTEGER NOT NULL)"
+                )
+                cursor.execute(
+                    "INSERT INTO schema_version (version) VALUES (?)",
+                    (self.SCHEMA_VERSION,),
+                )
+                conn.commit()
+                return
 
-            # Create index for faster queries
+            # Run migrations on existing tables
             cursor.execute(
-                "CREATE INDEX idx_title_id ON watch_history(title_id)"
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
             )
-            cursor.execute(
-                "CREATE INDEX idx_last_watched ON watch_history(last_watched_date DESC)"
-            )
+            if not cursor.fetchone():
+                cursor.execute(
+                    "CREATE TABLE schema_version (version INTEGER NOT NULL)"
+                )
+                cursor.execute("INSERT INTO schema_version (version) VALUES (1)")
+                conn.commit()
 
-            conn.commit()
+            cursor.execute("SELECT version FROM schema_version")
+            row = cursor.fetchone()
+            current_version = row[0] if row else 1
+
+            if current_version < 2:
+                cursor.execute(
+                    "ALTER TABLE watch_history ADD COLUMN title_url TEXT"
+                )
+                cursor.execute(
+                    "ALTER TABLE watch_history ADD COLUMN magnet_url TEXT"
+                )
+                cursor.execute(
+                    "UPDATE schema_version SET version = 2"
+                )
+                conn.commit()
 
     def add_watch_record(
         self,
         title_id: str,
         title_name: str,
         media_type: MediaType,
+        title_url: Optional[str] = None,
+        magnet_url: Optional[str] = None,
         last_episode: Optional[int] = None,
         duration_seconds: int = 0,
     ) -> WatchHistory:
@@ -78,6 +112,8 @@ class Database:
             title_id: Unique title identifier
             title_name: Name of the title
             media_type: Type of media (movie/series)
+            title_url: Page URL (used to re-fetch series episodes)
+            magnet_url: Magnet URL (for movies: skip re-fetch on resume)
             last_episode: Last watched episode (for series)
             duration_seconds: Total duration of the content
 
@@ -92,22 +128,24 @@ class Database:
             cursor.execute(
                 """
                 INSERT INTO watch_history (
-                    title_id, title_name, media_type, last_episode,
-                    last_watched_date, duration_seconds
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    title_id, title_name, media_type, title_url, magnet_url,
+                    last_episode, last_watched_date, duration_seconds
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(title_id) DO UPDATE SET
                     title_name = excluded.title_name,
+                    title_url = COALESCE(excluded.title_url, title_url),
+                    magnet_url = COALESCE(excluded.magnet_url, magnet_url),
                     last_episode = COALESCE(excluded.last_episode, last_episode),
                     last_watched_date = excluded.last_watched_date,
                     duration_seconds = excluded.duration_seconds,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (title_id, title_name, media_type.value, last_episode, now, duration_seconds),
+                (title_id, title_name, media_type.value, title_url, magnet_url,
+                 last_episode, now, duration_seconds),
             )
 
             conn.commit()
 
-            # Retrieve and return the record
             record = self.get_watch_record(title_id)
             return record
 
@@ -207,19 +245,14 @@ class Database:
             conn.commit()
 
     def _row_to_watch_history(self, row: sqlite3.Row) -> WatchHistory:
-        """Convert database row to WatchHistory object.
-
-        Args:
-            row: SQLite row
-
-        Returns:
-            WatchHistory object
-        """
+        """Convert database row to WatchHistory object."""
         return WatchHistory(
             id=row["id"],
             title_id=row["title_id"],
             title_name=row["title_name"],
             media_type=MediaType(row["media_type"]),
+            title_url=row["title_url"],
+            magnet_url=row["magnet_url"],
             last_episode=row["last_episode"],
             last_watched_date=datetime.fromisoformat(row["last_watched_date"]),
             duration_seconds=row["duration_seconds"],

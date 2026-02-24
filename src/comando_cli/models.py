@@ -39,7 +39,6 @@ class Title(BaseModel):
     media_type: MediaType
     url: str
     poster_url: Optional[str] = None
-    synopsis: Optional[str] = None
     episodes: list[Episode] = Field(default_factory=list)
     quality_options: list[QualityOption] = Field(default_factory=list)
 
@@ -51,6 +50,8 @@ class WatchHistory(BaseModel):
     title_id: str
     title_name: str
     media_type: MediaType
+    title_url: Optional[str] = None  # Page URL (for re-fetching series episodes)
+    magnet_url: Optional[str] = None  # Magnet URL (for movies: skip re-fetch)
     last_episode: Optional[int] = None  # For series: last watched episode
     last_watched_date: datetime = Field(default_factory=datetime.now)
     duration_seconds: int = 0  # Video duration in seconds
