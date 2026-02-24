@@ -113,8 +113,7 @@ def select_quality_and_language(title: Title, episode: Optional[int] = None) -> 
         return None
     
     # Create a temporary title with filtered options for selection
-    filtered_title = title
-    filtered_title.quality_options = quality_options
+    filtered_title = title.model_copy(update={"quality_options": quality_options})
 
     # Step 1: Quality selection
     quality_option = select_quality(filtered_title)
