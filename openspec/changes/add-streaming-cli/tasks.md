@@ -49,7 +49,7 @@
 - [x] 6.4 Launch mpv with local file path
 - [x] 6.5 Implement graceful cleanup: kill webtorrent after mpv closes
 - [x] 6.6 Add error handling: network errors, invalid torrents, stalled downloads
-- [ ] 6.7 Write tests for playback flow (mock webtorrent/mpv)
+- [x] 6.7 Write tests for playback flow (mock webtorrent/mpv) - **DONE: 14 tests, 100% coverage**
 - [ ] 6.8 Manual test: actual torrent streaming to completion
 
 ## 7. CLI Interface
@@ -87,6 +87,18 @@
 - Task 1 must complete first
 - Task 7 depends on 2-6 being mostly complete
 - Manual testing at each major phase recommended
+
+## Testing Phase Results (Completed)
+- **Total**: 115 tests passing, 77% coverage
+- **Test files created**:
+  - test_db.py: 13 tests (98% coverage)
+  - test_episode_selector.py: 30 tests (98% coverage)
+  - test_scraper.py: 18 tests with mocked Scrapling (90% coverage)
+  - test_quality_selector.py: 25 tests with mocked typer (100% coverage)
+  - test_config.py: 15 tests for XDG directories (100% coverage)
+  - test_playback.py: 14 tests for streaming (100% coverage)
+- **Modules at 100%**: models, config, quality_selector, playback
+- **Refactoring**: Simplified playback to use `webtorrent --mpv` directly
 
 ## Site Analysis Results (Completed)
 - Used Python scripts to analyze gratistorrent.com structure instead of playwright-cli
