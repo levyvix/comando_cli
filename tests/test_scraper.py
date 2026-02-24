@@ -298,7 +298,7 @@ class TestSearchEndpoint:
     """Tests for search endpoint configuration."""
 
     def test_search_uses_correct_endpoint(self, scraper):
-        """Test search uses root endpoint with 's' parameter."""
+        """Test search uses index.php endpoint with 's' parameter."""
         with patch.object(scraper.fetcher, 'get') as mock_get:
             mock_response = MagicMock()
             mock_response.html_content = "<html></html>"
@@ -309,5 +309,5 @@ class TestSearchEndpoint:
             # Verify the endpoint and parameters
             mock_get.assert_called_once()
             call_args = mock_get.call_args
-            assert call_args[0][0] == "https://gratistorrent.com/"
+            assert call_args[0][0] == "https://gratistorrent.com/index.php"
             assert call_args[1]['params'] == {'s': 'matrix'}

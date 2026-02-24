@@ -14,7 +14,7 @@ class GratistorrentScraper:
     """Scraper for gratistorrent.com content."""
 
     BASE_URL = "https://gratistorrent.com"
-    SEARCH_ENDPOINT = "/"
+    SEARCH_ENDPOINT = "/index.php"
 
     def __init__(self):
         """Initialize the scraper with Scrapling Fetcher."""
