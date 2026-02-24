@@ -23,15 +23,11 @@ Stream movies and TV series from gratistorrent.com directly from your terminal.
 ### Prerequisites
 
 1. **Install Python 3.12+** if not already installed
-2. **Install UV** (Python package manager):
-   ```bash
-   pip install uv
-   ```
-3. **Install WebTorrent CLI:**
+2. **Install WebTorrent CLI:**
    ```bash
    npm install -g webtorrent
    ```
-4. **Install MPV player:**
+3. **Install MPV player:**
    - **Ubuntu/Debian:**
      ```bash
      sudo apt-get install mpv
@@ -51,7 +47,7 @@ Clone and install the project:
 
 ```bash
 cd ~/path/to/comando_cli
-uv pip install -e .
+python3 install_cli.py
 ```
 
 This installs the `com` command globally in your Python environment.
@@ -62,61 +58,46 @@ This installs the `com` command globally in your Python environment.
 
 #### Search for content:
 ```bash
-uv run com search "Breaking Bad"
+com search "Breaking Bad"
 com search "The Matrix"
 ```
 
 #### Watch content:
 ```bash
 # Movies
-uv run com watch "The Matrix"
+com watch "The Matrix"
 
 # Series (defaults to first episode)
-uv run com watch "Breaking Bad"
+com watch "Breaking Bad"
 
 # Series with specific episodes
-uv run com watch "Breaking Bad" -e 2          # Episode 2
-uv run com watch "Breaking Bad" -e 2-5        # Episodes 2-5
-uv run com watch "Breaking Bad" -e 2-         # Episode 2 onwards
-uv run com watch "Breaking Bad" -e -5         # Episodes 1-5
+com watch "Breaking Bad" -e 2          # Episode 2
+com watch "Breaking Bad" -e 2-5        # Episodes 2-5
+com watch "Breaking Bad" -e 2-         # Episode 2 onwards
+com watch "Breaking Bad" -e -5         # Episodes 1-5
 ```
 
 #### View watch history:
 ```bash
-uv run com history
+com history
 ```
 
 #### Resume watching:
 ```bash
-uv run com resume
+com resume
 ```
 
 ### Global Flags
 
 ```bash
 # Enable verbose output
-uv run com --verbose search "Query"
-uv run com -v watch "Title"
+com --verbose search "Query"
+com -v watch "Title"
 
 # Show help
-uv run com --help
-uv run com search --help
-uv run com watch --help
-```
-
-## Running Without `uv run`
-
-### Option 1: Add to PATH
-```bash
-export PATH="$PWD/.venv/bin:$PATH"
-com search "Movie"
-com watch "Title"
-```
-
-### Option 2: Create a symlink
-```bash
-sudo ln -s $(pwd)/.venv/bin/com /usr/local/bin/com
-com search "Movie"
+com --help
+com search --help
+com watch --help
 ```
 
 ### Option 3: Direct venv execution
