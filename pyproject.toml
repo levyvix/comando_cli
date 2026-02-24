@@ -11,6 +11,15 @@ dependencies = [
     "typer>=0.24.1",
 ]
 
+[project.scripts]
+com = "comando_cli.cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
