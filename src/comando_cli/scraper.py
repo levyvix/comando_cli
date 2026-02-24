@@ -4,6 +4,7 @@ import re
 from typing import Optional
 from urllib.parse import urljoin, urlparse
 
+from bs4 import BeautifulSoup
 from scrapling import Fetcher
 
 from .models import Episode, MediaType, QualityOption, Title
@@ -12,8 +13,8 @@ from .models import Episode, MediaType, QualityOption, Title
 class GratistorrentScraper:
     """Scraper for gratistorrent.com content."""
 
-    BASE_URL = "https://www.gratistorrent.com"
-    SEARCH_URL = f"{BASE_URL}/search"
+    BASE_URL = "https://gratistorrent.com"
+    SEARCH_ENDPOINT = "/"
 
     def __init__(self):
         """Initialize the scraper with Scrapling Fetcher."""
@@ -29,15 +30,13 @@ class GratistorrentScraper:
             List of Title objects
         """
         try:
-            result = self.fetcher.get(self.SEARCH_URL, params={"q": query})
+            result = self.fetcher.get(self.BASE_URL + self.SEARCH_ENDPOINT, params={"s": query})
 
             if not result:
                 return []
 
-            # Try to get HTML content from the response
-            html = getattr(result, 'text', None) or getattr(result, 'content', None) or ""
-            if isinstance(html, bytes):
-                html = html.decode('utf-8', errors='ignore')
+            # Get HTML content from the Scrapling response
+            html = getattr(result, 'html_content', None) or getattr(result, 'text', None) or ""
 
             titles = self._parse_search_results(html)
             return titles
@@ -60,10 +59,8 @@ class GratistorrentScraper:
             if not result:
                 return None
 
-            # Try to get HTML content from the response
-            html = getattr(result, 'text', None) or getattr(result, 'content', None) or ""
-            if isinstance(html, bytes):
-                html = html.decode('utf-8', errors='ignore')
+            # Get HTML content from the Scrapling response
+            html = getattr(result, 'html_content', None) or getattr(result, 'text', None) or ""
 
             title = self._parse_title_page(html, title_url)
             return title
@@ -81,25 +78,38 @@ class GratistorrentScraper:
             List of Title objects
         """
         titles = []
+        soup = BeautifulSoup(html, 'html.parser')
 
-        # Find all title containers - look for links to filme/ or series/
-        link_pattern = r'href="([^"]*(?:filme|series)/[^"]*)"[^>]*>([^<]+)<'
-        links = re.findall(link_pattern, html, re.IGNORECASE)
+        # Find all content items with class capa_lista
+        items = soup.find_all('div', class_='capa_lista')
 
-        for link_url, title_name in links:
-            full_url = urljoin(self.BASE_URL, link_url)
+        for item in items:
+            # Get the link (href) from the first <a> tag
+            link = item.find('a', href=True)
+            if not link:
+                continue
 
-            # Determine media type from URL
-            media_type = MediaType.SERIES if "/series/" in full_url else MediaType.MOVIE
+            url = link.get('href', '')
+            if not url:
+                continue
+
+            # Get title from h3 inside dados_capa
+            title_elem = item.find('h3')
+            title_name = title_elem.text.strip() if title_elem else 'Unknown'
+
+            # Determine media type from categoria span
+            categoria_elem = item.find('span', class_='capa_categoria')
+            categoria_text = categoria_elem.text.strip().lower() if categoria_elem else 'filme'
+            media_type = MediaType.SERIES if 'série' in categoria_text else MediaType.MOVIE
 
             # Extract ID from URL
-            title_id = urlparse(full_url).path.strip("/").split("/")[-1]
+            title_id = urlparse(url).path.strip('/').split('/')[-1]
 
             title = Title(
                 id=title_id,
-                name=title_name.strip(),
+                name=title_name,
                 media_type=media_type,
-                url=full_url,
+                url=url,
             )
 
             titles.append(title)
@@ -116,9 +126,11 @@ class GratistorrentScraper:
         Returns:
             Title object with metadata
         """
-        # Extract title from page
-        title_match = re.search(r"<h1[^>]*>([^<]+)</h1>", html)
-        title_name = title_match.group(1).strip() if title_match else "Unknown"
+        soup = BeautifulSoup(html, 'html.parser')
+
+        # Extract title from h1
+        h1 = soup.find('h1')
+        title_name = h1.text.strip() if h1 else "Unknown"
 
         # Determine media type from URL
         media_type = MediaType.SERIES if "/series/" in url else MediaType.MOVIE
@@ -126,13 +138,20 @@ class GratistorrentScraper:
         # Extract ID from URL
         title_id = urlparse(url).path.strip("/").split("/")[-1]
 
-        # Extract poster URL
-        poster_match = re.search(r'<img[^>]+src="([^"]*poster[^"]*)"', html, re.IGNORECASE)
-        poster_url = poster_match.group(1) if poster_match else None
+        # Extract poster URL (look for img with poster in src)
+        poster_url = None
+        img = soup.find('img', src=lambda x: x and 'poster' in x.lower())
+        if img:
+            poster_url = img.get('src')
 
         # Extract synopsis
-        synopsis_match = re.search(r'<p[^>]*class="[^"]*synopsis[^"]*"[^>]*>([^<]+)</p>', html)
-        synopsis = synopsis_match.group(1).strip() if synopsis_match else None
+        synopsis = None
+        p_tags = soup.find_all('p')
+        for p in p_tags:
+            text = p.get_text(separator=' ')
+            if len(text) > 100 and 'sinopse' in text.lower():
+                synopsis = text.strip()[:500]
+                break
 
         # Extract episodes (for series)
         episodes: list[Episode] = []
@@ -191,26 +210,49 @@ class GratistorrentScraper:
         Returns:
             List of QualityOption objects
         """
+        soup = BeautifulSoup(html, 'html.parser')
         options = []
 
-        # Look for magnet links with quality indicators
-        magnet_pattern = r"(magnet:\?[^\"\s<]+)"
-        quality_pattern = r"(\d{3,4}p|HDTV|BluRay|DVDRip)"
-        language_pattern = r"(Português|English|Dublado|Legendado|PT|EN|PTBR|ENG)"
+        # Find all magnet links
+        magnet_links = soup.find_all('a', href=lambda x: x and x.startswith('magnet:'))
 
-        magnets = re.findall(magnet_pattern, html)
-        qualities = re.findall(quality_pattern, html, re.IGNORECASE)
-        languages = re.findall(language_pattern, html, re.IGNORECASE)
+        for link in magnet_links:
+            magnet_url = link.get('href', '')
+            if not magnet_url:
+                continue
 
-        # Create combinations if available
-        for magnet in magnets[:5]:
-            quality = qualities[0] if qualities else "Unknown"
-            language = languages[0] if languages else "Portuguese"
+            # Extract quality and language from title attribute and nearby text
+            title_attr = link.get('title', '')
+            text_before = ''
+
+            # Get preceding span with class botao_dublado
+            prev_span = link.find_previous('span', class_='botao_dublado')
+            if prev_span:
+                text_before = prev_span.text.strip()
+
+            # Combine title and preceding text
+            full_text = (text_before + ' ' + title_attr).upper()
+
+            # Extract quality
+            quality = 'Unknown'
+            quality_patterns = ['1080p', '720p', '480p', '4k', 'hdtv', 'bluray', 'dvdrip']
+            for pattern in quality_patterns:
+                if pattern.upper() in full_text:
+                    quality = pattern.upper()
+                    break
+
+            # Extract language
+            language = 'Portuguese'
+            language_patterns = ['Portuguese', 'English', 'Dublado', 'Legendado', 'Dual']
+            for pattern in language_patterns:
+                if pattern.upper() in full_text:
+                    language = pattern.capitalize()
+                    break
 
             option = QualityOption(
                 quality=quality,
                 language=language,
-                magnet_link=magnet,
+                magnet_link=magnet_url,
             )
             options.append(option)
 

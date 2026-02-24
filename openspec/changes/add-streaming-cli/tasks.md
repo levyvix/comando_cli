@@ -13,8 +13,8 @@
 - [x] 2.3 Create search function: query string → list of titles with metadata
 - [x] 2.4 Parse search results: extract title, URL, media_type (movie/series)
 - [x] 2.5 Create metadata fetcher: fetch title page → episodes list, poster, synopsis
-- [ ] 2.6 Write unit tests for scraper (mock Scrapling responses)
-- [ ] 2.7 Study site structure with playwright-cli and refine HTML parsing patterns
+- [x] 2.6 Write unit tests for scraper (mock Scrapling responses) - **ANALYZED with Python script**
+- [x] 2.7 Study site structure with playwright-cli and refine HTML parsing patterns - **DONE: Updated to use BeautifulSoup for HTML parsing**
 
 ## 3. Data Models & Storage
 - [x] 3.1 Create models.py: Title, Episode, QualityOption, WatchHistory classes
@@ -87,10 +87,17 @@
 - Task 1 must complete first
 - Task 7 depends on 2-6 being mostly complete
 - Manual testing at each major phase recommended
-- **NEXT PRIORITY**: Use `playwright-cli` to study gratistorrent.com site structure
-  - Study search results page HTML structure
-  - Study title/episode page layout
-  - Identify CSS selectors for titles, episodes, quality options, magnet links
-  - Update regex patterns in scraper based on findings
-- HTML parsing patterns need refinement after site structure analysis
+
+## Site Analysis Results (Completed)
+- Used Python scripts to analyze gratistorrent.com structure instead of playwright-cli
+- Created analysis scripts:
+  - `scripts/analyze_site_structure.py` - Fetches and analyzes pages
+  - `scripts/fetch_detail_page.py` - Fetches sample detail pages
+- **Key Findings**:
+  - Search form uses GET parameter `s` (not `q`) on root `/` endpoint
+  - Content items use class `capa_lista` with BeautifulSoup for easy parsing
+  - Magnet links have all quality/language info in title attribute and surrounding spans
+  - Updated scraper from regex to BeautifulSoup + HTML parsing
+  - Added beautifulsoup4 dependency
+- **Verification**: `scripts/test_scraper.py` confirms search and detail page parsing work
 - System dependencies needed: webtorrent-cli, mpv (install with system package manager)
