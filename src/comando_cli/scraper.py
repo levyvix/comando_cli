@@ -132,8 +132,31 @@ class GratistorrentScraper:
         h1 = soup.find('h1')
         title_name = h1.text.strip() if h1 else "Unknown"
 
-        # Determine media type from URL
+        # Extract synopsis first (needed for media type detection)
+        synopsis = None
+        p_tags = soup.find_all('p')
+        for p in p_tags:
+            text = p.get_text(separator=' ')
+            if len(text) > 100 and 'sinopse' in text.lower():
+                synopsis = text.strip()[:500]
+                break
+
+        # Determine media type from synopsis, URL, and title
         media_type = MediaType.SERIES if "/series/" in url else MediaType.MOVIE
+        
+        # Check synopsis first (most reliable)
+        if synopsis:
+            synopsis_lower = synopsis.lower()
+            if 'série' in synopsis_lower or 'serie' in synopsis_lower:
+                media_type = MediaType.SERIES
+            elif 'filme' in synopsis_lower:
+                media_type = MediaType.MOVIE
+        
+        # If still not detected, check title for season indicators (Portuguese)
+        if media_type == MediaType.MOVIE:
+            title_lower = title_name.lower()
+            if any(term in title_lower for term in ['temporada', '1ª', '1a', '2ª', '2a', 'season']):
+                media_type = MediaType.SERIES
 
         # Extract ID from URL
         title_id = urlparse(url).path.strip("/").split("/")[-1]
@@ -143,15 +166,6 @@ class GratistorrentScraper:
         img = soup.find('img', src=lambda x: x and 'poster' in x.lower())
         if img:
             poster_url = img.get('src')
-
-        # Extract synopsis
-        synopsis = None
-        p_tags = soup.find_all('p')
-        for p in p_tags:
-            text = p.get_text(separator=' ')
-            if len(text) > 100 and 'sinopse' in text.lower():
-                synopsis = text.strip()[:500]
-                break
 
         # Extract episodes (for series)
         episodes: list[Episode] = []
@@ -210,6 +224,9 @@ class GratistorrentScraper:
         Returns:
             List of QualityOption objects
         """
+        import re
+        from urllib.parse import unquote
+        
         soup = BeautifulSoup(html, 'html.parser')
         options = []
 
@@ -249,10 +266,21 @@ class GratistorrentScraper:
                     language = pattern.capitalize()
                     break
 
+            # Extract episode number from magnet link filename (dn parameter)
+            episode = None
+            dn_match = re.search(r'dn=([^&]+)', magnet_url)
+            if dn_match:
+                filename = unquote(dn_match.group(1))
+                # Look for SxxEyy or s0xE0y pattern
+                ep_match = re.search(r'[Ss](\d{1,2})[Ee](\d{1,2})', filename)
+                if ep_match:
+                    episode = int(ep_match.group(2))
+
             option = QualityOption(
                 quality=quality,
                 language=language,
                 magnet_link=magnet_url,
+                episode=episode,
             )
             options.append(option)
 

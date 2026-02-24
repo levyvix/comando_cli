@@ -1,5 +1,6 @@
 """Quality and language selection menus."""
 
+import subprocess
 from typing import Optional
 
 import typer
@@ -93,26 +94,85 @@ def select_language(options: list[QualityOption]) -> Optional[QualityOption]:
         return None
 
 
-def select_quality_and_language(title: Title) -> Optional[QualityOption]:
+def select_quality_and_language(title: Title, episode: Optional[int] = None) -> Optional[QualityOption]:
     """Full quality and language selection flow.
 
     Args:
         title: Title object with quality options
+        episode: Episode number to filter by (for series)
 
     Returns:
         Selected QualityOption or None if cancelled
     """
+    # Filter by episode if specified
+    quality_options = title.quality_options
+    if episode is not None:
+        quality_options = [opt for opt in quality_options if opt.episode == episode or opt.episode is None]
+    
+    if not quality_options:
+        return None
+    
+    # Create a temporary title with filtered options for selection
+    filtered_title = title
+    filtered_title.quality_options = quality_options
+
     # Step 1: Quality selection
-    quality_option = select_quality(title)
+    quality_option = select_quality(filtered_title)
     if not quality_option:
         return None
 
     # Filter options by selected quality
     same_quality_options = [
-        opt for opt in title.quality_options if opt.quality == quality_option.quality
+        opt for opt in quality_options if opt.quality == quality_option.quality
     ]
 
     # Step 2: Language selection
     language_option = select_language(same_quality_options)
 
     return language_option
+
+
+def select_title(results: list[Title]) -> Optional[Title]:
+    """Interactive fzf selection from search results.
+
+    Args:
+        results: List of Title objects from search
+
+    Returns:
+        Selected Title or None if cancelled
+    """
+    if not results:
+        return None
+
+    if len(results) == 1:
+        return results[0]
+
+    labels = [f"{t.name} ({t.media_type.value})" for t in results]
+    input_text = "\n".join(labels)
+
+    try:
+        proc = subprocess.run(
+            ["fzf", "--prompt=Select title> ", "--height=40%", "--reverse"],
+            input=input_text,
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return None
+        selected_label = proc.stdout.strip()
+        for i, label in enumerate(labels):
+            if label == selected_label:
+                return results[i]
+    except FileNotFoundError:
+        # fzf not available, fallback to numbered list
+        typer.echo("\n🔍 Select a title:")
+        for i, label in enumerate(labels, 1):
+            typer.echo(f"  {i}. {label}")
+        try:
+            choice = typer.prompt("Enter choice (number)", type=int)
+            if 1 <= choice <= len(results):
+                return results[choice - 1]
+        except (ValueError, KeyboardInterrupt):
+            pass
+
+    return None

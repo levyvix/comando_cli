@@ -74,6 +74,7 @@ class TorrentPlayer:
 
         except KeyboardInterrupt:
             typer.echo("\n⏹️  Playback interrupted")
+            raise
         except Exception as e:
             raise PlaybackError(f"Playback failed: {e}") from e
 
@@ -87,10 +88,20 @@ class TorrentPlayer:
             PlaybackError: If process fails
         """
         cmd = ["webtorrent", "--mpv", magnet_link]
+        if self.config.download_dir:
+            self.config.download_dir.mkdir(parents=True, exist_ok=True)
+            cmd += ["--out", str(self.config.download_dir)]
 
         try:
-            result = subprocess.run(cmd, check=False)
+            result = subprocess.run(cmd, check=False, capture_output=False)
             if result.returncode not in (0, 143):  # 143 is SIGTERM (user interrupt)
+                # errno -122 = EDQUOT (disk quota exceeded), errno -28 = ENOSPC (no space left)
+                if result.returncode == 1:
+                    raise PlaybackError(
+                        f"Playback process exited with code {result.returncode}. "
+                        "If you saw 'Unknown system error -122' or '-28', your disk is full or quota exceeded. "
+                        "Free up space in /tmp or ~/.config/webtorrent and try again."
+                    )
                 raise PlaybackError(f"Playback process exited with code {result.returncode}")
 
         except FileNotFoundError as e:

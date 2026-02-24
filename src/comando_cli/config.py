@@ -16,6 +16,7 @@ class AppConfig(BaseModel):
     data_dir: Path = Field(
         default_factory=lambda: Path.home() / ".local" / "share" / "comando-cli"
     )
+    download_dir: Optional[Path] = Field(default=None)
     verbose: bool = False
     max_concurrent_downloads: int = 2
 

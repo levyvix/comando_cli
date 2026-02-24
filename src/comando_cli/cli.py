@@ -9,7 +9,7 @@ from .db import Database
 from .episode_selector import parse_episode_syntax
 from .models import MediaType
 from .playback import PlaybackError, TorrentPlayer
-from .quality_selector import select_quality_and_language
+from .quality_selector import select_quality_and_language, select_title
 from .scraper import GratistorrentScraper, ScraperError
 
 app = typer.Typer(help="Comando CLI - Stream movies and TV series from the command line.")
@@ -86,8 +86,10 @@ def watch(
             typer.echo("❌ No results found")
             return
 
-        # For demo: use first result
-        title = results[0]
+        title = select_title(results)
+        if not title:
+            typer.echo("❌ No title selected")
+            return
         typer.echo(f"\n✓ Selected: {title.name} ({title.media_type.value})")
 
         # Fetch metadata
@@ -99,20 +101,30 @@ def watch(
             return
 
         # Handle episodes for series
+        episodes_to_play: list[int] = []
         if title_detail.media_type == MediaType.SERIES:
+            # Infer total episodes from quality options (each has an episode number)
+            episode_numbers = set()
+            for opt in title_detail.quality_options:
+                if opt.episode:
+                    episode_numbers.add(opt.episode)
+            total_episodes = max(episode_numbers) if episode_numbers else 1
+
             if episodes:
                 try:
-                    episode_range = parse_episode_syntax(episodes, len(title_detail.episodes))
+                    episode_range = parse_episode_syntax(episodes, total_episodes)
                     typer.echo(f"✓ Episodes: {episode_range.episodes}")
+                    episodes_to_play = episode_range.episodes
                 except Exception as e:
                     typer.echo(f"❌ Invalid episode syntax: {e}", err=True)
                     return
             else:
-                # Default to first episode if not specified
                 typer.echo("✓ No episode specified, starting from first available")
+                episodes_to_play = [1]
 
-        # Select quality and language
-        quality_option = select_quality_and_language(title_detail)
+        # Select quality and language for the first episode (or movie)
+        first_episode = episodes_to_play[0] if episodes_to_play else None
+        quality_option = select_quality_and_language(title_detail, episode=first_episode)
         if not quality_option:
             typer.echo("❌ No quality selected")
             return
@@ -124,9 +136,39 @@ def watch(
             media_type=title_detail.media_type,
         )
 
-        # Play torrent
         player = TorrentPlayer(config)
-        player.play_torrent(quality_option.magnet_link, title_detail)
+
+        if not episodes_to_play:
+            # Movie: play directly
+            player.play_torrent(quality_option.magnet_link, title_detail, episode=None)
+        else:
+            # Series: play each episode, reusing same quality+language for subsequent ones
+            for i, ep_num in enumerate(episodes_to_play):
+                if i == 0:
+                    ep_option = quality_option
+                else:
+                    # Auto-select same quality+language for this episode
+                    ep_option = next(
+                        (
+                            opt
+                            for opt in title_detail.quality_options
+                            if opt.episode == ep_num
+                            and opt.quality == quality_option.quality
+                            and opt.language == quality_option.language
+                        ),
+                        None,
+                    )
+                    if not ep_option:
+                        typer.echo(
+                            f"⚠️  No {quality_option.quality} {quality_option.language} option for episode {ep_num}, skipping"
+                        )
+                        continue
+
+                try:
+                    player.play_torrent(ep_option.magnet_link, title_detail, episode=ep_num)
+                except KeyboardInterrupt:
+                    typer.echo("\n⏹️  Stopped")
+                    break
 
     except ScraperError as e:
         typer.echo(f"❌ Scraper error: {e}", err=True)

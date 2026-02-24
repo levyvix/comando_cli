@@ -28,6 +28,7 @@ class QualityOption(BaseModel):
     quality: str  # e.g., "720p", "1080p"
     language: str  # e.g., "Portuguese", "English"
     magnet_link: str
+    episode: Optional[int] = None  # Episode number for series
 
 
 class Title(BaseModel):
