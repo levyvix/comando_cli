@@ -1,0 +1,24 @@
+# Comando CLI Configuration
+# Default location: ~/.config/comando-cli/config.toml
+
+[app]
+verbose = false
+max_concurrent_downloads = 2
+
+# Video player settings
+[playback]
+# Path to mpv executable (optional, uses system default if not specified)
+# mpv_path = "/usr/bin/mpv"
+
+# Subtitle settings
+[subtitles]
+# auto_download = false
+# language_preference = "pt"
+
+# Cache settings
+[cache]
+# Max torrent cache size in GB
+max_cache_size_gb = 50
+
+# Cleanup torrent files after playback (true/false)
+auto_cleanup = true

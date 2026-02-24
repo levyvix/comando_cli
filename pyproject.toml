@@ -1,0 +1,17 @@
+[project]
+name = "comando-cli"
+version = "0.1.0"
+description = "Stream movies and TV series from gratistorrent.com via CLI"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.12.5",
+    "scrapling[all]>=0.4",
+    "typer>=0.24.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]
