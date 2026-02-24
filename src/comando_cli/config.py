@@ -1,24 +1,29 @@
 """Configuration management with XDG Base Directory support."""
 
 import os
+import tomllib
 from pathlib import Path
 from typing import Optional
 
-import tomllib
 from pydantic import BaseModel, Field
 
 
 class AppConfig(BaseModel):
     """Application configuration."""
 
-    cache_dir: Path = Field(default_factory=lambda: Path.home() / ".cache" / "comando-cli")
-    config_dir: Path = Field(default_factory=lambda: Path.home() / ".config" / "comando-cli")
+    cache_dir: Path = Field(
+        default_factory=lambda: Path.home() / ".cache" / "comando-cli"
+    )
+    config_dir: Path = Field(
+        default_factory=lambda: Path.home() / ".config" / "comando-cli"
+    )
     data_dir: Path = Field(
         default_factory=lambda: Path.home() / ".local" / "share" / "comando-cli"
     )
     download_dir: Optional[Path] = Field(default=None)
     verbose: bool = False
     max_concurrent_downloads: int = 2
+    scraper: str = "gratistorrent"  # or comando_la
 
 
 def get_xdg_dirs() -> tuple[Path, Path, Path]:
@@ -27,8 +32,12 @@ def get_xdg_dirs() -> tuple[Path, Path, Path]:
     Returns:
         Tuple of (config_dir, cache_dir, data_dir)
     """
-    config_dir = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "comando-cli"
-    cache_dir = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "comando-cli"
+    config_dir = (
+        Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "comando-cli"
+    )
+    cache_dir = (
+        Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "comando-cli"
+    )
     data_dir = (
         Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
         / "comando-cli"

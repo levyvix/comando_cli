@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from comando_cli.models import MediaType
-from comando_cli.scraper import GratistorrentScraper, ScraperError
+from comando_cli.scraper import ComandoLaScraper, GratistorrentScraper, ScraperError
 
 
 @pytest.fixture
@@ -186,8 +186,8 @@ class TestMetadataFetch:
             mock_response.html_content = html
             mock_get.return_value = mock_response
 
-            # Test series URL
-            result = scraper.fetch_metadata("https://example.com/series/test/")
+            # Test series URL (uses "temporada" keyword in URL)
+            result = scraper.fetch_metadata("https://example.com/temporada-1/test/")
             assert result.media_type == MediaType.SERIES
 
             # Test movie URL
@@ -311,3 +311,191 @@ class TestSearchEndpoint:
             call_args = mock_get.call_args
             assert call_args[0][0] == "https://gratistorrent.com/index.php"
             assert call_args[1]['params'] == {'s': 'matrix'}
+
+
+
+class TestComandoLaScraperSearchResults:
+    """Tests for ComandoLaScraper._parse_search_results."""
+
+    def test_parse_search_results_movie(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = """
+        <article>
+            <header>
+                <h2><a href="https://comando.la/filmes/test-movie/">Test Movie</a></h2>
+            </header>
+        </article>
+        """
+        results = scraper._parse_search_results(html)
+        assert len(results) == 1
+        assert results[0].name == "Test Movie"
+        assert results[0].media_type == MediaType.MOVIE
+        assert results[0].url == "https://comando.la/filmes/test-movie/"
+
+    def test_parse_search_results_series_by_url(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = """
+        <article>
+            <header>
+                <h2><a href="https://comando.la/series/breaking-bad/">Breaking Bad</a></h2>
+            </header>
+        </article>
+        """
+        results = scraper._parse_search_results(html)
+        assert len(results) == 1
+        assert results[0].media_type == MediaType.SERIES
+
+    def test_parse_search_results_series_by_keyword(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = """
+        <article>
+            <header>
+                <h2><a href="https://comando.la/show-temporada-1/">Show 1ª Temporada</a></h2>
+            </header>
+        </article>
+        """
+        results = scraper._parse_search_results(html)
+        assert results[0].media_type == MediaType.SERIES
+
+    def test_parse_search_results_empty(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        results = scraper._parse_search_results("<html></html>")
+        assert results == []
+
+    def test_parse_search_results_extracts_id(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = """
+        <article>
+            <header>
+                <h2><a href="https://comando.la/filmes/inception-2010/">Inception</a></h2>
+            </header>
+        </article>
+        """
+        results = scraper._parse_search_results(html)
+        assert results[0].id == "inception-2010"
+
+    def test_parse_search_results_multiple(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = """
+        <article>
+            <header><h2><a href="https://comando.la/filmes/movie-1/">Movie 1</a></h2></header>
+        </article>
+        <article>
+            <header><h2><a href="https://comando.la/filmes/movie-2/">Movie 2</a></h2></header>
+        </article>
+        """
+        results = scraper._parse_search_results(html)
+        assert len(results) == 2
+        assert results[0].name == "Movie 1"
+        assert results[1].name == "Movie 2"
+
+
+class TestComandoLaScraperTitlePage:
+    """Tests for ComandoLaScraper._parse_title_page."""
+
+    def test_parse_title_page_basic(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = "<h1>Test Movie</h1>"
+        result = scraper._parse_title_page(html, "https://comando.la/filmes/test-movie/")
+        assert result.name == "Test Movie"
+        assert result.media_type == MediaType.MOVIE
+
+    def test_parse_title_page_series_url(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = "<h1>Breaking Bad</h1>"
+        result = scraper._parse_title_page(html, "https://comando.la/series/breaking-bad/")
+        assert result.media_type == MediaType.SERIES
+
+    def test_parse_title_page_poster(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = """
+        <h1>Test Movie</h1>
+        <div class="entry-content cf">
+            <img src="https://exemplo.com/poster.jpg" />
+        </div>
+        """
+        result = scraper._parse_title_page(html, "https://comando.la/filmes/test/")
+        assert result.poster_url == "https://exemplo.com/poster.jpg"
+
+    def test_parse_title_page_no_poster(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = "<h1>Test Movie</h1>"
+        result = scraper._parse_title_page(html, "https://comando.la/filmes/test/")
+        assert result.poster_url is None
+
+    def test_parse_title_page_magnet_links(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = """
+        <h1>Test Movie</h1>
+        <span class="botao_dublado">1080P DUBLADO</span>
+        <a href="magnet:?xt=urn:btih:abc123">DOWNLOAD</a>
+        """
+        result = scraper._parse_title_page(html, "https://comando.la/filmes/test/")
+        assert len(result.quality_options) == 1
+        assert result.quality_options[0].quality == "1080P"
+        assert result.quality_options[0].magnet_link == "magnet:?xt=urn:btih:abc123"
+
+    def test_parse_title_page_episode_from_magnet(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = """
+        <h1>Breaking Bad</h1>
+        <span class="botao_dublado">720P DUBLADO</span>
+        <a href="magnet:?xt=urn:btih:abc&dn=Breaking.Bad.S01E03.mkv">DOWNLOAD</a>
+        """
+        result = scraper._parse_title_page(html, "https://comando.la/series/breaking-bad/")
+        assert result.quality_options[0].episode == 3
+
+    def test_parse_title_page_series_by_title_keyword(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = "<h1>Show 1ª Temporada</h1>"
+        result = scraper._parse_title_page(html, "https://comando.la/show-temporada/")
+        assert result.media_type == MediaType.SERIES
+
+
+class TestComandoLaScraperIntegration:
+    """Integration tests for ComandoLaScraper search/fetch_metadata with mocked session."""
+
+    def _make_scraper_with_mock(self, html):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        mock_fetcher = MagicMock()
+        mock_response = MagicMock()
+        mock_response.html_content = html
+        mock_fetcher.fetch.return_value = mock_response
+        scraper._fetcher = mock_fetcher
+        return scraper, mock_fetcher
+
+    def test_search_calls_correct_url(self):
+        scraper, mock_fetcher = self._make_scraper_with_mock("<html></html>")
+        scraper.search("matrix")
+        mock_fetcher.fetch.assert_called_once()
+        call_args = mock_fetcher.fetch.call_args
+        assert "comando.la" in call_args[0][0]
+        assert "s=matrix" in call_args[0][0]
+
+    def test_search_returns_empty_on_no_results(self):
+        scraper, _ = self._make_scraper_with_mock("<html></html>")
+        assert scraper.search("nada") == []
+
+    def test_search_raises_scraper_error_on_failure(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        mock_fetcher = MagicMock()
+        mock_fetcher.fetch.side_effect = Exception("network error")
+        scraper._fetcher = mock_fetcher
+        scraper._MAX_RETRIES = 1
+        with pytest.raises(ScraperError, match="Search failed"):
+            scraper.search("test")
+
+    def test_fetch_metadata_raises_scraper_error_on_failure(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        mock_fetcher = MagicMock()
+        mock_fetcher.fetch.side_effect = Exception("network error")
+        scraper._fetcher = mock_fetcher
+        scraper._MAX_RETRIES = 1
+        with pytest.raises(ScraperError, match="Metadata fetch failed"):
+            scraper.fetch_metadata("https://comando.la/filmes/test/")
+
+    def test_fetch_metadata_returns_none_when_no_response(self):
+        scraper, mock_fetcher = self._make_scraper_with_mock("")
+        mock_fetcher.fetch.return_value = None
+        result = scraper.fetch_metadata("https://comando.la/filmes/test/")
+        assert result is None

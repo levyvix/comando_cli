@@ -108,10 +108,10 @@ def select_quality_and_language(title: Title, episode: Optional[int] = None) -> 
     quality_options = title.quality_options
     if episode is not None:
         quality_options = [opt for opt in quality_options if opt.episode == episode or opt.episode is None]
-    
+
     if not quality_options:
         return None
-    
+
     # Create a temporary title with filtered options for selection
     filtered_title = title.model_copy(update={"quality_options": quality_options})
 

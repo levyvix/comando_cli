@@ -1,13 +1,12 @@
 """Tests for database module."""
 
 import tempfile
-from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from comando_cli.db import Database
-from comando_cli.models import MediaType, WatchHistory
+from comando_cli.models import MediaType
 
 
 @pytest.fixture

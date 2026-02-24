@@ -4,13 +4,13 @@ from typing import Optional
 
 import typer
 
-from .config import ensure_directories, load_config
+from .config import ensure_directories
 from .db import Database
 from .episode_selector import parse_episode_syntax
 from .models import MediaType
 from .playback import PlaybackError, TorrentPlayer
 from .quality_selector import select_quality_and_language, select_title
-from .scraper import GratistorrentScraper, ScraperError
+from .scraper import ComandoLaScraper, GratistorrentScraper, ScraperError
 
 app = typer.Typer(
     help="Comando CLI - Stream movies and TV series from the command line."
@@ -19,6 +19,13 @@ app = typer.Typer(
 # Global state for config and database
 config = None
 db = None
+
+
+def _make_scraper():
+    """Instantiate scraper based on config."""
+    if config and config.scraper == "gratistorrent":
+        return GratistorrentScraper()
+    return ComandoLaScraper()
 
 
 @app.callback()
@@ -48,7 +55,7 @@ def search(query: str = typer.Argument(..., help="Search query")) -> None:
     try:
         typer.echo(f"🔍 Searching for: {query}")
 
-        scraper = GratistorrentScraper()
+        scraper = _make_scraper()
         results = scraper.search(query)
 
         if not results:
@@ -64,9 +71,7 @@ def search(query: str = typer.Argument(..., help="Search query")) -> None:
         raise typer.Exit(1)
 
 
-def _play_title(
-    title_detail, episodes: Optional[str], scraper: GratistorrentScraper
-) -> None:
+def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
     """Core play logic shared between watch and resume commands."""
     episodes_to_play: list[int] = []
     if title_detail.media_type == MediaType.SERIES:
@@ -168,7 +173,7 @@ def watch(
     try:
         typer.echo(f"🔍 Searching for: {title_query}")
 
-        scraper = GratistorrentScraper()
+        scraper = _make_scraper()
         results = scraper.search(title_query)
 
         if not results:
@@ -235,7 +240,7 @@ def resume() -> None:
 
         typer.echo(f"▶️  Resuming: {last_watch.title_name}")
 
-        scraper = GratistorrentScraper()
+        scraper = _make_scraper()
 
         if last_watch.media_type == MediaType.MOVIE and last_watch.magnet_url:
             # Movie with saved magnet: play directly without re-fetching

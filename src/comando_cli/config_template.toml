@@ -4,6 +4,8 @@
 [app]
 verbose = false
 max_concurrent_downloads = 2
+# Scraper source: "comando_la" (default) or "gratistorrent"
+scraper = "comando_la"
 
 # Video player settings
 [playback]

@@ -1,13 +1,67 @@
-"""Web scraper for gratistorrent.com using Scrapling."""
+"""Web scrapers for torrent sites using Scrapling."""
 
 import re
+import time
 from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from scrapling import Fetcher
 
 from .models import Episode, MediaType, QualityOption, Title
+
+
+def _parse_quality_options(html: str) -> list[QualityOption]:
+    """Extract quality and language options from magnet links.
+
+    Shared between GratistorrentScraper and ComandoLaScraper.
+    """
+    from urllib.parse import unquote
+
+    soup = BeautifulSoup(html, "html.parser")
+    options = []
+
+    magnet_links = soup.find_all("a", href=lambda x: x and x.startswith("magnet:"))
+
+    for link in magnet_links:
+        magnet_url = link.get("href", "")
+        if not magnet_url:
+            continue
+
+        title_attr = link.get("title", "")
+        prev_span = link.find_previous("span", class_="botao_dublado")
+        text_before = prev_span.text.strip() if prev_span else ""
+
+        full_text = (text_before + " " + title_attr).upper()
+
+        quality = "Unknown"
+        for pattern in ["1080P", "720P", "480P", "4K", "HDTV", "BLURAY", "DVDRIP", "MKV"]:
+            if pattern in full_text:
+                quality = pattern
+                break
+
+        language = "Portuguese"
+        for pattern in ["DUBLADO", "LEGENDADO", "DUAL", "ENGLISH", "PORTUGUESE"]:
+            if pattern in full_text:
+                language = pattern.capitalize()
+                break
+
+        episode = None
+        dn_match = re.search(r"dn=([^&]+)", magnet_url)
+        if dn_match:
+            filename = unquote(dn_match.group(1))
+            ep_match = re.search(r"[Ss](\d{1,2})[Ee](\d{1,2})", filename)
+            if ep_match:
+                episode = int(ep_match.group(2))
+
+        options.append(QualityOption(
+            quality=quality,
+            language=language,
+            magnet_link=magnet_url,
+            episode=episode,
+        ))
+
+    return options
 
 
 class GratistorrentScraper:
@@ -18,7 +72,7 @@ class GratistorrentScraper:
 
     def __init__(self):
         """Initialize the scraper with Scrapling Fetcher."""
-        self.fetcher = Fetcher()
+        self.fetcher = Fetcher
 
     def search(self, query: str) -> list[Title]:
         """Search for titles on gratistorrent.com.
@@ -30,13 +84,19 @@ class GratistorrentScraper:
             List of Title objects
         """
         try:
-            result = self.fetcher.get(self.BASE_URL + self.SEARCH_ENDPOINT, params={"s": query})
+            result = self.fetcher.get(
+                self.BASE_URL + self.SEARCH_ENDPOINT, params={"s": query}
+            )
 
             if not result:
                 return []
 
             # Get HTML content from the Scrapling response
-            html = getattr(result, 'html_content', None) or getattr(result, 'text', None) or ""
+            html = (
+                getattr(result, "html_content", None)
+                or getattr(result, "text", None)
+                or ""
+            )
 
             titles = self._parse_search_results(html)
             return titles
@@ -60,7 +120,11 @@ class GratistorrentScraper:
                 return None
 
             # Get HTML content from the Scrapling response
-            html = getattr(result, 'html_content', None) or getattr(result, 'text', None) or ""
+            html = (
+                getattr(result, "html_content", None)
+                or getattr(result, "text", None)
+                or ""
+            )
 
             title = self._parse_title_page(html, title_url)
             return title
@@ -78,38 +142,42 @@ class GratistorrentScraper:
             List of Title objects
         """
         titles = []
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html, "html.parser")
 
         # Find all content items with class capa_lista
-        items = soup.find_all('div', class_='capa_lista')
+        items = soup.find_all("div", class_="capa_lista")
 
         for item in items:
             # Get the link (href) from the first <a> tag
-            link = item.find('a', href=True)
+            link = item.find("a", href=True)
             if not link:
                 continue
 
-            url = link.get('href', '')
+            url = link.get("href", "")
             if not url:
                 continue
 
             # Get title from h3 inside dados_capa
-            title_elem = item.find('h3')
-            title_name = title_elem.text.strip() if title_elem else 'Unknown'
+            title_elem = item.find("h3")
+            title_name = title_elem.text.strip() if title_elem else "Unknown"
 
             # Determine media type from categoria span
-            categoria_elem = item.find('span', class_='capa_categoria')
-            categoria_text = categoria_elem.text.strip().lower() if categoria_elem else 'filme'
-            media_type = MediaType.SERIES if 'série' in categoria_text else MediaType.MOVIE
+            categoria_elem = item.find("span", class_="capa_categoria")
+            categoria_text = (
+                categoria_elem.text.strip().lower() if categoria_elem else "filme"
+            )
+            media_type = (
+                MediaType.SERIES if "série" in categoria_text else MediaType.MOVIE
+            )
 
             # Extract ID from URL
-            title_id = urlparse(url).path.strip('/').split('/')[-1]
+            title_id = urlparse(str(url)).path.strip("/").split("/")[-1]
 
             title = Title(
                 id=title_id,
                 name=title_name,
                 media_type=media_type,
-                url=url,
+                url=str(url),
             )
 
             titles.append(title)
@@ -126,36 +194,22 @@ class GratistorrentScraper:
         Returns:
             Title object with metadata
         """
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html, "html.parser")
 
         # Extract title from h1
-        h1 = soup.find('h1')
+        h1 = soup.find("h1")
         title_name = h1.text.strip() if h1 else "Unknown"
 
-        # Extract synopsis first (needed for media type detection)
-        synopsis = None
-        p_tags = soup.find_all('p')
-        for p in p_tags:
-            text = p.get_text(separator=' ')
-            if len(text) > 100 and 'sinopse' in text.lower():
-                synopsis = text.strip()[:500]
-                break
+        # Determine media type from URL and title
+        media_type = MediaType.SERIES if "temporada" in url else MediaType.MOVIE
 
-        # Determine media type from synopsis, URL, and title
-        media_type = MediaType.SERIES if "/series/" in url else MediaType.MOVIE
-        
-        # Check synopsis first (most reliable)
-        if synopsis:
-            synopsis_lower = synopsis.lower()
-            if 'série' in synopsis_lower or 'serie' in synopsis_lower:
-                media_type = MediaType.SERIES
-            elif 'filme' in synopsis_lower:
-                media_type = MediaType.MOVIE
-        
         # If still not detected, check title for season indicators (Portuguese)
         if media_type == MediaType.MOVIE:
             title_lower = title_name.lower()
-            if any(term in title_lower for term in ['temporada', '1ª', '1a', '2ª', '2a', 'season']):
+            if any(
+                term in title_lower
+                for term in ["temporada", "1ª", "1a", "2ª", "2a", "season"]
+            ):
                 media_type = MediaType.SERIES
 
         # Extract ID from URL
@@ -163,9 +217,9 @@ class GratistorrentScraper:
 
         # Extract poster URL (look for img with poster in src)
         poster_url = None
-        img = soup.find('img', src=lambda x: x and 'poster' in x.lower())
+        img = soup.find("img", src=lambda x: x and "poster" in x.lower())
         if img:
-            poster_url = img.get('src')
+            poster_url = img.get("src")
 
         # Extract episodes (for series)
         episodes: list[Episode] = []
@@ -180,8 +234,7 @@ class GratistorrentScraper:
             name=title_name,
             media_type=media_type,
             url=url,
-            poster_url=poster_url,
-            synopsis=synopsis,
+            poster_url=str(poster_url) if poster_url else None,
             episodes=episodes,
             quality_options=quality_options,
         )
@@ -216,75 +269,180 @@ class GratistorrentScraper:
         return episodes
 
     def _parse_quality_options(self, html: str) -> list[QualityOption]:
-        """Extract quality and language options.
+        return _parse_quality_options(html)
+
+
+class ComandoLaScraper:
+    """Scraper for comando.la content using StealthySession (Cloudflare bypass)."""
+
+    BASE_URL = "https://comando.la"
+    _MAX_RETRIES = 3
+    _RETRY_DELAY = 2.0
+
+    def __init__(self):
+        """Initialize the scraper with StealthyFetcher for Cloudflare bypass."""
+        from scrapling import StealthyFetcher
+        self._fetcher = StealthyFetcher
+
+    def search(self, query: str) -> list[Title]:
+        """Search for titles on comando.la.
+
+        Args:
+            query: Search query
+
+        Returns:
+            List of Title objects
+        """
+        from urllib.parse import urlencode
+        try:
+            url = f"{self.BASE_URL}/?{urlencode({'s': query})}"
+            result = self._fetch_with_retry(url)
+            if not result:
+                return []
+            html = (
+                getattr(result, "html_content", None)
+                or getattr(result, "text", None)
+                or ""
+            )
+            return self._parse_search_results(html)
+        except Exception as e:
+            raise ScraperError(f"Search failed: {e}") from e
+
+    def fetch_metadata(self, title_url: str) -> Optional[Title]:
+        """Fetch metadata for a specific title.
+
+        Args:
+            title_url: URL of the title page
+
+        Returns:
+            Title object with metadata, or None if fetch fails
+        """
+        try:
+            result = self._fetch_with_retry(title_url)
+            if not result:
+                return None
+            html = (
+                getattr(result, "html_content", None)
+                or getattr(result, "text", None)
+                or ""
+            )
+            return self._parse_title_page(html, title_url)
+        except Exception as e:
+            raise ScraperError(f"Metadata fetch failed: {e}") from e
+
+    def _fetch_with_retry(self, url: str):
+        """Fetch URL with real Chrome to bypass bot detection."""
+        last_exc: Exception = RuntimeError("No strategies attempted")
+        for attempt in range(self._MAX_RETRIES):
+            try:
+                result = self._fetcher.fetch(
+                    url,
+                    headless=True,
+                    real_chrome=True,
+                    network_idle=True,
+                    google_search=False,
+                )
+                status = getattr(result, "status", None)
+                if status is not None and status >= 400:
+                    last_exc = ScraperError(f"HTTP {status} fetching {url}")
+                    time.sleep(self._RETRY_DELAY * (2 ** attempt))
+                    continue
+                return result
+            except ScraperError:
+                raise
+            except Exception as e:
+                last_exc = e
+                if attempt < self._MAX_RETRIES - 1:
+                    time.sleep(self._RETRY_DELAY * (2 ** attempt))
+        raise last_exc
+
+    def _parse_search_results(self, html: str) -> list[Title]:
+        """Parse search results HTML from comando.la.
 
         Args:
             html: HTML content
 
         Returns:
-            List of QualityOption objects
+            List of Title objects
         """
-        import re
-        from urllib.parse import unquote
-        
-        soup = BeautifulSoup(html, 'html.parser')
-        options = []
+        soup = BeautifulSoup(html, "html.parser")
+        titles = []
 
-        # Find all magnet links
-        magnet_links = soup.find_all('a', href=lambda x: x and x.startswith('magnet:'))
-
-        for link in magnet_links:
-            magnet_url = link.get('href', '')
-            if not magnet_url:
+        for article in soup.find_all("article"):
+            header = article.find("header")
+            if not header:
+                continue
+            h2 = header.find("h2")
+            if not h2:
+                continue
+            a = h2.find("a", href=True)
+            if not a:
                 continue
 
-            # Extract quality and language from title attribute and nearby text
-            title_attr = link.get('title', '')
-            text_before = ''
+            url = a.get("href", "")
+            title_name = a.text.strip()
+            if not url or not title_name:
+                continue
 
-            # Get preceding span with class botao_dublado
-            prev_span = link.find_previous('span', class_='botao_dublado')
-            if prev_span:
-                text_before = prev_span.text.strip()
+            if "/series/" in url or "/serie/" in url:
+                media_type = MediaType.SERIES
+            elif any(kw in title_name.lower() for kw in ["temporada", "season"]):
+                media_type = MediaType.SERIES
+            else:
+                media_type = MediaType.MOVIE
 
-            # Combine title and preceding text
-            full_text = (text_before + ' ' + title_attr).upper()
+            title_id = urlparse(url).path.strip("/").split("/")[-1]
+            titles.append(Title(
+                id=title_id,
+                name=title_name,
+                media_type=media_type,
+                url=url,
+            ))
 
-            # Extract quality
-            quality = 'Unknown'
-            quality_patterns = ['1080p', '720p', '480p', '4k', 'hdtv', 'bluray', 'dvdrip']
-            for pattern in quality_patterns:
-                if pattern.upper() in full_text:
-                    quality = pattern.upper()
-                    break
+        return titles
 
-            # Extract language
-            language = 'Portuguese'
-            language_patterns = ['Portuguese', 'English', 'Dublado', 'Legendado', 'Dual']
-            for pattern in language_patterns:
-                if pattern.upper() in full_text:
-                    language = pattern.capitalize()
-                    break
+    def _parse_title_page(self, html: str, url: str) -> Optional[Title]:
+        """Parse title metadata page from comando.la.
 
-            # Extract episode number from magnet link filename (dn parameter)
-            episode = None
-            dn_match = re.search(r'dn=([^&]+)', magnet_url)
-            if dn_match:
-                filename = unquote(dn_match.group(1))
-                # Look for SxxEyy or s0xE0y pattern
-                ep_match = re.search(r'[Ss](\d{1,2})[Ee](\d{1,2})', filename)
-                if ep_match:
-                    episode = int(ep_match.group(2))
+        Args:
+            html: HTML content of title page
+            url: URL of the title page
 
-            option = QualityOption(
-                quality=quality,
-                language=language,
-                magnet_link=magnet_url,
-                episode=episode,
-            )
-            options.append(option)
+        Returns:
+            Title object with metadata
+        """
+        soup = BeautifulSoup(html, "html.parser")
 
-        return options
+        h1 = soup.find("h1")
+        title_name = h1.text.strip() if h1 else "Unknown"
+
+        if "/series/" in url or "/serie/" in url:
+            media_type = MediaType.SERIES
+        elif any(kw in title_name.lower() for kw in ["temporada", "season", "1ª", "1a", "2ª", "2a"]):
+            media_type = MediaType.SERIES
+        else:
+            media_type = MediaType.MOVIE
+
+        title_id = urlparse(url).path.strip("/").split("/")[-1]
+
+        poster_url = None
+        entry_content = soup.find("div", class_="entry-content")
+        if entry_content:
+            img = entry_content.find("img")
+            if img:
+                poster_url = img.get("src")
+
+        quality_options = _parse_quality_options(html)
+
+        return Title(
+            id=title_id,
+            name=title_name,
+            media_type=media_type,
+            url=url,
+            poster_url=str(poster_url) if poster_url else None,
+            episodes=[],
+            quality_options=quality_options,
+        )
 
 
 class ScraperError(Exception):

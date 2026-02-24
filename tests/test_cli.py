@@ -1,10 +1,8 @@
 """Tests for CLI module."""
 
 from datetime import datetime
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
-import typer
 from typer.testing import CliRunner
 
 from comando_cli.cli import app
@@ -50,7 +48,7 @@ class TestSearchCommand:
 
     def test_search_displays_results(self):
         """Test search displays found results."""
-        with patch("comando_cli.cli.GratistorrentScraper") as mock_scraper_class:
+        with patch("comando_cli.cli._make_scraper") as mock_scraper_class:
             with patch("comando_cli.cli.ensure_directories"):
                 with patch("comando_cli.cli.Database"):
                     mock_scraper = MagicMock()
@@ -85,11 +83,14 @@ class TestSearchCommand:
                 result = runner.invoke(app, ["search", ""])
 
                 assert result.exit_code == 0
-                assert "cannot be empty" in result.stdout or "Search query" in result.stdout
+                assert (
+                    "cannot be empty" in result.stdout
+                    or "Search query" in result.stdout
+                )
 
     def test_search_no_results(self):
         """Test search with no results."""
-        with patch("comando_cli.cli.GratistorrentScraper") as mock_scraper_class:
+        with patch("comando_cli.cli._make_scraper") as mock_scraper_class:
             with patch("comando_cli.cli.ensure_directories"):
                 with patch("comando_cli.cli.Database"):
                     mock_scraper = MagicMock()
@@ -103,7 +104,7 @@ class TestSearchCommand:
 
     def test_search_scraper_error_handling(self):
         """Test search handles scraper errors."""
-        with patch("comando_cli.cli.GratistorrentScraper") as mock_scraper_class:
+        with patch("comando_cli.cli._make_scraper") as mock_scraper_class:
             with patch("comando_cli.cli.ensure_directories"):
                 with patch("comando_cli.cli.Database"):
                     mock_scraper = MagicMock()
@@ -117,7 +118,11 @@ class TestSearchCommand:
                     assert result.exit_code == 1
                     # Error message may be in output or exception
                     output = result.stdout + (result.stderr or "")
-                    assert "Search error" in output or "Network error" in output or result.exception is not None
+                    assert (
+                        "Search error" in output
+                        or "Network error" in output
+                        or result.exception is not None
+                    )
 
 
 class TestWatchCommand:
@@ -125,7 +130,7 @@ class TestWatchCommand:
 
     def test_watch_movie_basic_flow(self):
         """Test watching a movie with basic flow."""
-        with patch("comando_cli.cli.GratistorrentScraper") as mock_scraper_class:
+        with patch("comando_cli.cli._make_scraper") as mock_scraper_class:
             with patch("comando_cli.cli.select_quality_and_language") as mock_select:
                 with patch("comando_cli.cli.TorrentPlayer") as mock_player_class:
                     with patch("comando_cli.cli.ensure_directories"):
@@ -178,7 +183,7 @@ class TestWatchCommand:
 
     def test_watch_series_with_episodes(self):
         """Test watching a series with episode selection."""
-        with patch("comando_cli.cli.GratistorrentScraper") as mock_scraper_class:
+        with patch("comando_cli.cli._make_scraper") as mock_scraper_class:
             with patch("comando_cli.cli.select_quality_and_language") as mock_select:
                 with patch("comando_cli.cli.parse_episode_syntax") as mock_parse:
                     with patch("comando_cli.cli.TorrentPlayer") as mock_player_class:
@@ -232,14 +237,16 @@ class TestWatchCommand:
                                 mock_player = MagicMock()
                                 mock_player_class.return_value = mock_player
 
-                                result = runner.invoke(app, ["watch", "series", "-e", "1-3"])
+                                result = runner.invoke(
+                                    app, ["watch", "series", "-e", "1-3"]
+                                )
 
                                 assert result.exit_code == 0
                                 assert "Episodes:" in result.stdout
 
     def test_watch_no_results(self):
         """Test watch when search returns no results."""
-        with patch("comando_cli.cli.GratistorrentScraper") as mock_scraper_class:
+        with patch("comando_cli.cli._make_scraper") as mock_scraper_class:
             with patch("comando_cli.cli.ensure_directories"):
                 with patch("comando_cli.cli.Database"):
                     mock_scraper = MagicMock()
@@ -253,7 +260,7 @@ class TestWatchCommand:
 
     def test_watch_no_quality_selected(self):
         """Test watch when user doesn't select a quality."""
-        with patch("comando_cli.cli.GratistorrentScraper") as mock_scraper_class:
+        with patch("comando_cli.cli._make_scraper") as mock_scraper_class:
             with patch("comando_cli.cli.select_quality_and_language") as mock_select:
                 with patch("comando_cli.cli.ensure_directories"):
                     with patch("comando_cli.cli.Database"):
@@ -388,7 +395,7 @@ class TestAppInitialization:
     def test_app_has_commands(self):
         """Test app has all required commands."""
         # Check that app has the expected commands
-        command_names = {cmd.name for cmd in app.registered_commands}
+        _ = {cmd.name for cmd in app.registered_commands}
 
         # Typer app structure is different, check by invoking help
         result = runner.invoke(app, ["--help"])

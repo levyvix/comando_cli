@@ -133,8 +133,11 @@ com search "Movie"
 - **scrapling** (≥0.4) - Advanced web scraping with intelligent element selection
 
 ### External Tools
-- **webtorrent** - WebTorrent client for streaming torrents
 - **mpv** - Video player for playback
+- **webtorrent-cli** - WebTorrent client used by mpv-webtorrent-hook (`npm install -g webtorrent-cli`)
+- **jq** - JSON processor required by mpv-webtorrent-hook
+- **xidel** - HTML/XML parser required by mpv-webtorrent-hook (AUR: `yay -S xidel-bin`)
+- **mpv-webtorrent-hook** - Enables mpv to open magnet links directly (installed automatically by the CLI)
 
 ### Development Dependencies
 - **pytest** (≥9.0.2) - Testing framework
@@ -163,10 +166,15 @@ uv pip install -e ".[dev]"
 ## Troubleshooting
 
 ### WebTorrent not found
-Ensure `webtorrent` is installed globally:
+Ensure `webtorrent-cli` is installed globally:
 ```bash
-npm install -g webtorrent
+npm install -g webtorrent-cli
 which webtorrent
+```
+
+### xidel not found (Arch Linux)
+```bash
+yay -S xidel-bin
 ```
 
 ### MPV not found

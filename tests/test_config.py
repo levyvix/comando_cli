@@ -5,8 +5,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from comando_cli.config import AppConfig, ensure_directories, get_xdg_dirs, load_config
 
 
@@ -23,6 +21,12 @@ class TestAppConfig:
         assert config.data_dir == home / ".local" / "share" / "comando-cli"
         assert config.verbose is False
         assert config.max_concurrent_downloads == 2
+        assert config.scraper == "comando_la"
+
+    def test_app_config_scraper_field(self):
+        """Test AppConfig accepts custom scraper value."""
+        config = AppConfig(scraper="gratistorrent")
+        assert config.scraper == "gratistorrent"
 
     def test_app_config_custom_values(self):
         """Test AppConfig with custom values."""
