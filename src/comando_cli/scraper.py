@@ -14,7 +14,7 @@ from .models import Episode, MediaType, QualityOption, Title
 def _parse_quality_options(html: str) -> list[QualityOption]:
     """Extract quality and language options from magnet links.
 
-    Shared between GratistorrentScraper and ComandoLaScraper.
+    Used by GratistorrentScraper. ComandoLaScraper has its own implementation.
     """
     from urllib.parse import unquote
 
@@ -338,9 +338,9 @@ class ComandoLaScraper:
                 result = self._fetcher.fetch(
                     url,
                     headless=True,
-                    real_chrome=True,
                     network_idle=True,
                     google_search=False,
+                    solve_cloudflare=True,
                 )
                 status = getattr(result, "status", None)
                 if status is not None and status >= 400:
@@ -432,7 +432,11 @@ class ComandoLaScraper:
             if img:
                 poster_url = img.get("src")
 
-        quality_options = _parse_quality_options(html)
+        episodes: list[Episode] = []
+        if media_type == MediaType.SERIES:
+            episodes = self._parse_episodes(html)
+
+        quality_options = self._parse_quality_options(html)
 
         return Title(
             id=title_id,
@@ -440,9 +444,134 @@ class ComandoLaScraper:
             media_type=media_type,
             url=url,
             poster_url=str(poster_url) if poster_url else None,
-            episodes=[],
+            episodes=episodes,
             quality_options=quality_options,
         )
+
+    def _parse_episodes(self, html: str) -> list[Episode]:
+        """Extract episode list from a comando.la series page.
+
+        Args:
+            html: HTML content
+
+        Returns:
+            List of Episode objects (deduplicated by number)
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        seen: set[int] = set()
+        episodes: list[Episode] = []
+
+        entry_content = soup.find("div", class_="entry-content")
+        if not entry_content:
+            return episodes
+
+        for p in entry_content.find_all("p"):
+            strong = p.find("strong")
+            if not strong:
+                continue
+            text = strong.get_text(strip=True)
+            # Match "Episódio 01:" or "Ep. 1:" or "Episode 1"
+            ep_match = re.search(r"[Ee]p(?:is[oó]dio)?\.?\s*(\d+)", text)
+            if not ep_match:
+                continue
+            ep_num = int(ep_match.group(1))
+            if ep_num not in seen:
+                seen.add(ep_num)
+                episodes.append(Episode(number=ep_num))
+
+        return sorted(episodes, key=lambda e: e.number)
+
+    def _parse_quality_options(self, html: str) -> list[QualityOption]:
+        """Extract quality and language options from comando.la magnet links.
+
+        Parses link text for quality ("1080p", "720p", "2160p 4K") and
+        infers language from surrounding context and the magnet dn= param.
+
+        Args:
+            html: HTML content of title page
+
+        Returns:
+            List of QualityOption objects
+        """
+        from urllib.parse import unquote
+
+        soup = BeautifulSoup(html, "html.parser")
+        options: list[QualityOption] = []
+
+        entry_content = soup.find("div", class_="entry-content")
+        if not entry_content:
+            return options
+
+        magnet_links = entry_content.find_all(
+            "a", href=lambda x: x and x.startswith("magnet:")
+        )
+
+        for link in magnet_links:
+            magnet_url = link.get("href", "")
+            if not magnet_url:
+                continue
+
+            # Quality from link text ("1080p", "720p", "2160p 4K", "Download Magnet")
+            link_text = link.get_text(strip=True).upper()
+            quality = "Unknown"
+            for q in ["2160P", "4K", "1080P", "720P", "480P"]:
+                if q in link_text:
+                    quality = q.replace("P", "p") if q.endswith("P") else q
+                    break
+
+            # Fallback: extract quality from magnet dn= param
+            if quality == "Unknown":
+                dn_match = re.search(r"dn=([^&]+)", magnet_url)
+                if dn_match:
+                    dn = unquote(dn_match.group(1)).upper()
+                    for q in ["2160P", "4K", "1080P", "720P", "480P"]:
+                        if q in dn:
+                            quality = q.replace("P", "p") if q.endswith("P") else q
+                            break
+
+            # Language from surrounding <p> and <strong> text and dn= param
+            context_text = ""
+            parent_p = link.find_parent("p")
+            if parent_p:
+                context_text = parent_p.get_text(" ", strip=True).upper()
+
+            # Walk up to find language headers (e.g. <strong>DUAL ÁUDIO</strong>)
+            prev = link.find_previous("strong")
+            if prev:
+                context_text += " " + prev.get_text(strip=True).upper()
+
+            dn_match = re.search(r"dn=([^&]+)", magnet_url)
+            dn_upper = unquote(dn_match.group(1)).upper() if dn_match else ""
+            context_text += " " + dn_upper
+
+            language = "Portuguese"
+            if "DUAL" in context_text:
+                language = "Dual"
+            elif "DUBLADO" in context_text or ".DUB." in context_text:
+                language = "Dubbed"
+            elif "LEGENDADO" in context_text or ".LEG." in context_text:
+                language = "Subtitled"
+
+            # Episode range from magnet dn= param
+            # Handles: S02E04, S02E01-02-03, S02E05-06, S02E07-08-09
+            episode = None
+            episode_end = None
+            ep_match = re.search(r"[Ss]\d{1,2}[Ee](\d{1,2})((?:-\d{2})+)?", dn_upper)
+            if ep_match:
+                episode = int(ep_match.group(1))
+                if ep_match.group(2):
+                    last = ep_match.group(2).rsplit("-", 1)[-1]
+                    episode_end = int(last)
+
+            options.append(QualityOption(
+                quality=quality,
+                language=language,
+                magnet_link=magnet_url,
+                episode=episode,
+                episode_end=episode_end,
+            ))
+
+        return options
 
 
 class ScraperError(Exception):

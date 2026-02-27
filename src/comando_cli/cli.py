@@ -122,14 +122,23 @@ def _play_consolidated(title_detail, quality_option, episodes_to_play: list[int]
     )
 
 
+def _option_covers(opt, ep_num: int) -> bool:
+    """Return True if a quality option covers the given episode number."""
+    if opt.episode is None:
+        return True
+    return opt.episode <= ep_num <= (opt.episode_end or opt.episode)
+
+
 def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
     """Core play logic shared between watch and resume commands."""
     episodes_to_play: list[int] = []
     if title_detail.media_type == MediaType.SERIES:
-        episode_numbers = {
-            opt.episode for opt in title_detail.quality_options if opt.episode
-        }
-        total_episodes = max(episode_numbers) if episode_numbers else 1
+        # total_episodes must account for episode_end ranges
+        total_episodes = max(
+            (opt.episode_end or opt.episode)
+            for opt in title_detail.quality_options
+            if opt.episode is not None
+        ) if any(opt.episode for opt in title_detail.quality_options) else 1
 
         if episodes:
             try:
@@ -150,7 +159,6 @@ def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
         typer.echo("❌ No quality selected")
         return
 
-    # Save to history with URLs
     magnet_to_save = (
         quality_option.magnet_link
         if title_detail.media_type == MediaType.MOVIE
@@ -168,34 +176,45 @@ def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
     player = TorrentPlayer(config)
 
     if not episodes_to_play:
-        # Movie: play directly
+        # Movie
         player.play_torrent(quality_option.magnet_link, title_detail, episode=None)
-    elif quality_option.episode is None and title_detail.media_type == MediaType.SERIES:
-        # Consolidated magnet: single torrent contains all episode files
-        _play_consolidated(title_detail, quality_option, episodes_to_play, player)
-    else:
-        # Per-episode magnets: play each individually
-        for i, ep_num in enumerate(episodes_to_play):
-            if i == 0:
-                ep_option = quality_option
-            else:
-                ep_option = next(
-                    (
-                        opt
-                        for opt in title_detail.quality_options
-                        if opt.episode == ep_num
-                        and opt.quality == quality_option.quality
-                        and opt.language == quality_option.language
-                    ),
-                    None,
-                )
-                if not ep_option:
-                    typer.echo(
-                        f"⚠️  No {quality_option.quality} {quality_option.language} option for episode {ep_num}, skipping"
-                    )
-                    continue
+        return
 
-            try:
+    if quality_option.episode is None:
+        # Fully consolidated magnet (one torrent = all episodes)
+        _play_consolidated(title_detail, quality_option, episodes_to_play, player)
+        return
+
+    # Series with per-magnet options (single or multi-episode per magnet).
+    # Walk episodes_to_play in order; collect consecutive episodes that share
+    # the same magnet, then play each magnet group.
+    seen_magnets: set[str] = set()
+    for ep_num in episodes_to_play:
+        ep_option = next(
+            (
+                opt for opt in title_detail.quality_options
+                if _option_covers(opt, ep_num)
+                and opt.quality == quality_option.quality
+                and opt.language == quality_option.language
+            ),
+            None,
+        )
+        if not ep_option:
+            typer.echo(
+                f"⚠️  No {quality_option.quality} {quality_option.language} option for episode {ep_num}, skipping"
+            )
+            continue
+
+        if ep_option.magnet_link in seen_magnets:
+            continue  # already queued this magnet
+        seen_magnets.add(ep_option.magnet_link)
+
+        try:
+            if ep_option.episode_end is not None:
+                # Multi-episode magnet — use consolidated playlist approach
+                _play_consolidated(title_detail, ep_option, episodes_to_play, player)
+            else:
+                # Single-episode magnet
                 player.play_torrent(ep_option.magnet_link, title_detail, episode=ep_num)
                 db.add_watch_record(
                     title_id=title_detail.id,
@@ -204,9 +223,9 @@ def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
                     title_url=title_detail.url,
                     last_episode=ep_num,
                 )
-            except KeyboardInterrupt:
-                typer.echo("\n⏹️  Stopped")
-                break
+        except KeyboardInterrupt:
+            typer.echo("\n⏹️  Stopped")
+            break
 
 
 @app.command()

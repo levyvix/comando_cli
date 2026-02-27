@@ -107,9 +107,17 @@ def select_quality_and_language(title: Title, episode: Optional[int] = None) -> 
     # Filter by episode if specified
     quality_options = title.quality_options
     if episode is not None:
-        quality_options = [opt for opt in quality_options if opt.episode == episode or opt.episode is None]
+        quality_options = [
+            opt for opt in quality_options
+            if opt.episode is None
+            or opt.episode <= episode <= (opt.episode_end or opt.episode)
+        ]
 
     if not quality_options:
+        if episode is not None:
+            typer.echo(f"❌ No quality options available for episode {episode}")
+        else:
+            typer.echo("❌ No quality options available")
         return None
 
     # Create a temporary title with filtered options for selection
