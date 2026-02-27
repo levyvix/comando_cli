@@ -140,8 +140,9 @@ def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
                 typer.echo(f"❌ Invalid episode syntax: {e}", err=True)
                 return
         else:
-            typer.echo("✓ No episode specified, starting from first available")
-            episodes_to_play = [1]
+            typer.echo("✓ No episode specified, playing from episode 1")
+            episode_range = parse_episode_syntax("1-", total_episodes)
+            episodes_to_play = episode_range.episodes
 
     first_episode = episodes_to_play[0] if episodes_to_play else None
     quality_option = select_quality_and_language(title_detail, episode=first_episode)
