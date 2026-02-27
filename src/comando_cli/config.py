@@ -23,7 +23,8 @@ class AppConfig(BaseModel):
     download_dir: Optional[Path] = Field(default=None)
     verbose: bool = False
     max_concurrent_downloads: int = 2
-    scraper: str = "gratistorrent"  # or comando_la
+    # scraper: str = "gratistorrent"  # or comando_la
+    scraper: str = "comando_la"
 
 
 def get_xdg_dirs() -> tuple[Path, Path, Path]:

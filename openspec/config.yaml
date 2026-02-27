@@ -1,0 +1,36 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Python 3.12+, Typer, Pydantic, Scrapling, BeautifulSoup4
+  Package manager: uv (use `uv add` for dependencies, never modify pyproject.toml directly)
+  Testing: pytest with pytest-cov
+  Project: CLI tool for streaming movies/TV from gratistorrent.com
+
+  Code conventions:
+  - Use Pydantic v2 for data validation (BaseModel, Field)
+  - Use type hints throughout
+  - docstrings for public APIs (Google style)
+  - Use enums for fixed choices (MediaType)
+  - Default_factory for mutable defaults in Pydantic models
+  - SQLite for local storage via db.py
+
+  CLI entry point: com = "comando_cli.cli:app"
+
+rules:
+  tasks:
+    - Break tasks into chunks of max 2 hours
+    - Always include a verification step
+    - Run pytest after implementing tests
+  proposal:
+    - Keep proposals under 500 words
+    - Always include a "Non-goals" section
+    - Include a rollback plan
+    - Focus on user-facing functionality first
+  specs:
+    - Use Given/When/Then format for scenarios
+  implementation:
+    - Add type hints to all public functions parameters and return types
+    - Use dataclasses/Pydantic models for structured data
+    - Keep functions under 50 lines when possible
+    - If code duplicates, consider writing a function.
+    - If functions share the same arguments, consider writing a class.
