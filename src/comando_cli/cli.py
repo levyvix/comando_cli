@@ -8,7 +8,7 @@ from .config import ensure_directories
 from .db import Database
 from .episode_selector import parse_episode_syntax
 from .models import MediaType
-from .playback import PlaybackError, TorrentPlayer
+from .playback import PlaybackError, TorrentPlayer, _is_video_file
 from .quality_selector import select_quality_and_language, select_title
 from .scraper import ComandoLaScraper, GratistorrentScraper, ScraperError
 
@@ -71,6 +71,57 @@ def search(query: str = typer.Argument(..., help="Search query")) -> None:
         raise typer.Exit(1)
 
 
+def _play_consolidated(title_detail, quality_option, episodes_to_play: list[int], player) -> None:
+    """Play a consolidated torrent as an mpv playlist starting from the requested episode."""
+    typer.echo("📦 Consolidated torrent detected — resolving file list...")
+    torrent_files = player.list_torrent_files(quality_option.magnet_link)
+
+    video_files = [f for f in torrent_files if _is_video_file(f.path)]
+    if not video_files:
+        video_files = torrent_files  # fallback: try all files
+
+    # Sort by episode number, then path
+    video_files_sorted = sorted(
+        video_files,
+        key=lambda f: (f.episode if f.episode is not None else 9999, f.path),
+    )
+
+    typer.echo(f"✓ Found {len(video_files_sorted)} video file(s) in torrent:")
+    for f in video_files_sorted:
+        ep_label = f"Ep.{f.episode:02d}" if f.episode is not None else "   "
+        typer.echo(f"  [{ep_label}] {f.path.split('/')[-1]}")
+
+    # Determine which file to start from
+    start_episode = episodes_to_play[0] if episodes_to_play else None
+    start_file = None
+    if start_episode is not None:
+        start_file = next(
+            (f for f in video_files_sorted if f.episode == start_episode), None
+        )
+    if start_file is None:
+        start_file = video_files_sorted[0] if video_files_sorted else None
+
+    if not start_file:
+        typer.echo("❌ No video files found in torrent")
+        return
+
+    # webtorrent --playlist rotates the file list to start_index and opens
+    # all files in mpv — the user navigates episodes natively with > / ]
+    player.play_torrent_playlist(
+        quality_option.magnet_link,
+        start_index=start_file.index,
+        title=title_detail,
+        start_episode=start_file.episode,
+    )
+    db.add_watch_record(
+        title_id=title_detail.id,
+        title_name=title_detail.name,
+        media_type=title_detail.media_type,
+        title_url=title_detail.url,
+        last_episode=start_file.episode,
+    )
+
+
 def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
     """Core play logic shared between watch and resume commands."""
     episodes_to_play: list[int] = []
@@ -118,8 +169,11 @@ def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
     if not episodes_to_play:
         # Movie: play directly
         player.play_torrent(quality_option.magnet_link, title_detail, episode=None)
+    elif quality_option.episode is None and title_detail.media_type == MediaType.SERIES:
+        # Consolidated magnet: single torrent contains all episode files
+        _play_consolidated(title_detail, quality_option, episodes_to_play, player)
     else:
-        # Series: play each episode, reusing same quality+language for subsequent ones
+        # Per-episode magnets: play each individually
         for i, ep_num in enumerate(episodes_to_play):
             if i == 0:
                 ep_option = quality_option
@@ -142,7 +196,6 @@ def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
 
             try:
                 player.play_torrent(ep_option.magnet_link, title_detail, episode=ep_num)
-                # Update last_episode after each episode played
                 db.add_watch_record(
                     title_id=title_detail.id,
                     title_name=title_detail.name,

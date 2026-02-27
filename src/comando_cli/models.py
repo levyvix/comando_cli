@@ -43,6 +43,15 @@ class Title(BaseModel):
     quality_options: list[QualityOption] = Field(default_factory=list)
 
 
+class TorrentFile(BaseModel):
+    """A file within a torrent archive."""
+
+    index: int
+    path: str
+    length: int = 0
+    episode: Optional[int] = None  # Extracted from filename
+
+
 class WatchHistory(BaseModel):
     """Watch history record."""
 
