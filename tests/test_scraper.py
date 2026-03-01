@@ -427,20 +427,22 @@ class TestComandoLaScraperTitlePage:
         scraper = ComandoLaScraper.__new__(ComandoLaScraper)
         html = """
         <h1>Test Movie</h1>
-        <span class="botao_dublado">1080P DUBLADO</span>
-        <a href="magnet:?xt=urn:btih:abc123">DOWNLOAD</a>
+        <div class="entry-content">
+        <p><a href="magnet:?xt=urn:btih:abc123&dn=Test.Movie.1080P.mkv">1080P DUBLADO</a></p>
+        </div>
         """
         result = scraper._parse_title_page(html, "https://comando.la/filmes/test/")
         assert len(result.quality_options) == 1
-        assert result.quality_options[0].quality == "1080P"
-        assert result.quality_options[0].magnet_link == "magnet:?xt=urn:btih:abc123"
+        assert result.quality_options[0].quality == "1080p"
+        assert result.quality_options[0].magnet_link == "magnet:?xt=urn:btih:abc123&dn=Test.Movie.1080P.mkv"
 
     def test_parse_title_page_episode_from_magnet(self):
         scraper = ComandoLaScraper.__new__(ComandoLaScraper)
         html = """
         <h1>Breaking Bad</h1>
-        <span class="botao_dublado">720P DUBLADO</span>
-        <a href="magnet:?xt=urn:btih:abc&dn=Breaking.Bad.S01E03.mkv">DOWNLOAD</a>
+        <div class="entry-content">
+        <p><a href="magnet:?xt=urn:btih:abc&dn=Breaking.Bad.S01E03.720p.mkv">720P DUBLADO</a></p>
+        </div>
         """
         result = scraper._parse_title_page(html, "https://comando.la/series/breaking-bad/")
         assert result.quality_options[0].episode == 3
@@ -460,6 +462,7 @@ class TestComandoLaScraperIntegration:
         mock_fetcher = MagicMock()
         mock_response = MagicMock()
         mock_response.html_content = html
+        mock_response.status = 200
         mock_fetcher.fetch.return_value = mock_response
         scraper._fetcher = mock_fetcher
         return scraper, mock_fetcher
