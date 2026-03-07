@@ -49,11 +49,11 @@ def setup(
 def search(query: str = typer.Argument(..., help="Search query")) -> None:
     """Search for movies and TV series on gratistorrent.com."""
     if not query:
-        typer.echo("❌ Search query cannot be empty")
+        typer.echo("Search query cannot be empty")
         return
 
     try:
-        typer.echo(f"🔍 Searching for: {query}")
+        typer.echo(f"🔍 Searching for: {query}...")
 
         scraper = _make_scraper()
         results = scraper.search(query)
@@ -71,7 +71,9 @@ def search(query: str = typer.Argument(..., help="Search query")) -> None:
         raise typer.Exit(1)
 
 
-def _play_consolidated(title_detail, quality_option, episodes_to_play: list[int], player) -> None:
+def _play_consolidated(
+    title_detail, quality_option, episodes_to_play: list[int], player
+) -> None:
     """Play a consolidated torrent as an mpv playlist starting from the requested episode."""
     typer.echo("📦 Consolidated torrent detected — resolving file list...")
     torrent_files = player.list_torrent_files(quality_option.magnet_link)
@@ -134,11 +136,15 @@ def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
     episodes_to_play: list[int] = []
     if title_detail.media_type == MediaType.SERIES:
         # total_episodes must account for episode_end ranges
-        total_episodes = max(
-            (opt.episode_end or opt.episode)
-            for opt in title_detail.quality_options
-            if opt.episode is not None
-        ) if any(opt.episode for opt in title_detail.quality_options) else 1
+        total_episodes = (
+            max(
+                (opt.episode_end or opt.episode)
+                for opt in title_detail.quality_options
+                if opt.episode is not None
+            )
+            if any(opt.episode for opt in title_detail.quality_options)
+            else 1
+        )
 
         if episodes:
             try:
@@ -192,7 +198,8 @@ def _play_title(title_detail, episodes: Optional[str], scraper) -> None:
     for ep_num in episodes_to_play:
         ep_option = next(
             (
-                opt for opt in title_detail.quality_options
+                opt
+                for opt in title_detail.quality_options
                 if _option_covers(opt, ep_num)
                 and opt.quality == quality_option.quality
                 and opt.language == quality_option.language

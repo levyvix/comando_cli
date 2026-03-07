@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "scrapling[all]>=0.4",
     "typer>=0.24.1",
+    "yoyo-migrations>=9.0.0",
 ]
 
 [project.scripts]

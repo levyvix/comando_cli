@@ -5,13 +5,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from .migrations import run_migrations
 from .models import MediaType, WatchHistory
 
 
 class Database:
     """SQLite database for watch history."""
-
-    SCHEMA_VERSION = 2
 
     def __init__(self, db_path: Path):
         """Initialize database connection.
@@ -21,80 +20,7 @@ class Database:
         """
         self.db_path = db_path
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_schema()
-
-    def _init_schema(self) -> None:
-        """Initialize database schema if it doesn't exist, and run migrations."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='watch_history'"
-            )
-            table_exists = cursor.fetchone() is not None
-
-            if not table_exists:
-                cursor.execute(
-                    """
-                    CREATE TABLE watch_history (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        title_id TEXT NOT NULL,
-                        title_name TEXT NOT NULL,
-                        media_type TEXT NOT NULL,
-                        title_url TEXT,
-                        magnet_url TEXT,
-                        last_episode INTEGER,
-                        last_watched_date DATETIME NOT NULL,
-                        duration_seconds INTEGER DEFAULT 0,
-                        position_seconds INTEGER DEFAULT 0,
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(title_id)
-                    )
-                    """
-                )
-                cursor.execute(
-                    "CREATE INDEX idx_title_id ON watch_history(title_id)"
-                )
-                cursor.execute(
-                    "CREATE INDEX idx_last_watched ON watch_history(last_watched_date DESC)"
-                )
-                cursor.execute(
-                    "CREATE TABLE schema_version (version INTEGER NOT NULL)"
-                )
-                cursor.execute(
-                    "INSERT INTO schema_version (version) VALUES (?)",
-                    (self.SCHEMA_VERSION,),
-                )
-                conn.commit()
-                return
-
-            # Run migrations on existing tables
-            cursor.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
-            )
-            if not cursor.fetchone():
-                cursor.execute(
-                    "CREATE TABLE schema_version (version INTEGER NOT NULL)"
-                )
-                cursor.execute("INSERT INTO schema_version (version) VALUES (1)")
-                conn.commit()
-
-            cursor.execute("SELECT version FROM schema_version")
-            row = cursor.fetchone()
-            current_version = row[0] if row else 1
-
-            if current_version < 2:
-                cursor.execute(
-                    "ALTER TABLE watch_history ADD COLUMN title_url TEXT"
-                )
-                cursor.execute(
-                    "ALTER TABLE watch_history ADD COLUMN magnet_url TEXT"
-                )
-                cursor.execute(
-                    "UPDATE schema_version SET version = 2"
-                )
-                conn.commit()
+        run_migrations(self.db_path)
 
     def add_watch_record(
         self,
@@ -140,13 +66,25 @@ class Database:
                     duration_seconds = excluded.duration_seconds,
                     updated_at = CURRENT_TIMESTAMP
                 """,
-                (title_id, title_name, media_type.value, title_url, magnet_url,
-                 last_episode, now, duration_seconds),
+                (
+                    title_id,
+                    title_name,
+                    media_type.value,
+                    title_url,
+                    magnet_url,
+                    last_episode,
+                    now,
+                    duration_seconds,
+                ),
             )
 
             conn.commit()
 
             record = self.get_watch_record(title_id)
+            if not record:
+                raise RuntimeError(
+                    f"failed to create watch record for title_id {title_id}"
+                )
             return record
 
     def get_watch_record(self, title_id: str) -> Optional[WatchHistory]:
