@@ -1,5 +1,6 @@
 """Web scrapers for torrent sites using Scrapling."""
 
+import logging
 import re
 import time
 from typing import Optional, Pattern
@@ -9,6 +10,8 @@ from bs4 import BeautifulSoup
 from scrapling import Fetcher
 
 from .models import Episode, MediaType, QualityOption, Title
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_quality_options(html: str) -> list[QualityOption]:
@@ -347,9 +350,6 @@ class ComandoLaScraper:
 
     def _fetch_with_retry(self, url: str):
         """Fetch URL: try CloakBrowser first, fallback to StealthyFetcher with retries."""
-        import logging
-
-        logger = logging.getLogger(__name__)
 
         # Primary: CloakBrowser (faster, 2.5x speed improvement)
         try:
@@ -391,6 +391,8 @@ class ComandoLaScraper:
 
         from cloakbrowser import launch_persistent_context
 
+        logger.debug(f"Fetching from cloakbrowser: {url}")
+
         # Persistent context saves cookies, so Cloudflare only needs to be solved once
         profile_dir = Path.home() / ".local/share/comando-cli/cloak_profile"
         profile_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -406,6 +408,7 @@ class ComandoLaScraper:
             ctx.close()
 
         # Return object compatible with Scrapling's response interface
+        logger.debug("Success fetching from cloakbrowser")
         return type("CloakResult", (), {"text": html, "html_content": html})()
 
     def _parse_search_results(self, html: str) -> list[Title]:

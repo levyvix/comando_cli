@@ -13,7 +13,6 @@ import typer
 from .config import AppConfig
 from .models import Title, TorrentFile
 
-
 _VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv", ".flv", ".webm"}
 
 _EP_PATTERNS = [
@@ -52,10 +51,10 @@ class TorrentPlayer:
 
     def _validate_dependencies(self) -> None:
         if not shutil.which("mpv"):
-            raise PlaybackError("mpv not installed. Install it to enable playback.")
+            raise PlaybackError("`mpv` not installed. Install it to enable playback.")
         if not shutil.which("webtorrent"):
             raise PlaybackError(
-                "webtorrent-cli not installed. Run: npm install -g webtorrent-cli"
+                "`webtorrent-cli` not installed. Run: npm install -g webtorrent-cli"
             )
 
     def play_torrent(
@@ -179,9 +178,12 @@ setTimeout(() => {{ process.stderr.write('timeout\\n'); process.exit(1); }}, 900
         try:
             result = subprocess.run(
                 [
-                    "webtorrent", magnet_link,
-                    "--mpv", "--playlist",
-                    "--select", str(start_index),
+                    "webtorrent",
+                    magnet_link,
+                    "--mpv",
+                    "--playlist",
+                    "--select",
+                    str(start_index),
                 ],
                 check=False,
             )
