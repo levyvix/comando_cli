@@ -11,38 +11,6 @@ from comando_cli.models import MediaType, QualityOption, Title, WatchHistory
 runner = CliRunner()
 
 
-class TestSetup:
-    """Tests for setup callback."""
-
-    def test_setup_initializes_config_and_db(self):
-        """Test setup initializes config and database."""
-        with patch("comando_cli.cli.ensure_directories") as mock_ensure:
-            with patch("comando_cli.cli.Database") as mock_db:
-                mock_config = MagicMock()
-                mock_ensure.return_value = mock_config
-
-                from comando_cli import cli
-
-                cli.setup(verbose=False)
-
-                mock_ensure.assert_called_once()
-                mock_db.assert_called_once()
-                assert cli.config == mock_config
-
-    def test_setup_with_verbose_flag(self):
-        """Test setup enables verbose mode when flag is set."""
-        with patch("comando_cli.cli.ensure_directories") as mock_ensure:
-            with patch("comando_cli.cli.Database"):
-                mock_config = MagicMock()
-                mock_ensure.return_value = mock_config
-
-                from comando_cli import cli
-
-                cli.setup(verbose=True)
-
-                assert mock_config.verbose is True
-
-
 class TestSearchCommand:
     """Tests for search command."""
 

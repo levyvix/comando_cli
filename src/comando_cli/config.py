@@ -24,7 +24,7 @@ class AppConfig(BaseModel):
     verbose: bool = False
     max_concurrent_downloads: int = 2
     # scraper: str = "gratistorrent"  # or comando_la
-    scraper: str = "comando_la"
+    scraper: str = "gratistorrent"
 
 
 def get_xdg_dirs() -> tuple[Path, Path, Path]:

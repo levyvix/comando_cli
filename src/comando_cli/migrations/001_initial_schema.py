@@ -5,7 +5,7 @@ from yoyo import step
 steps = [
     step(
         """
-        CREATE TABLE watch_history (
+        CREATE TABLE IF NOT EXISTS watch_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title_id TEXT NOT NULL,
             title_name TEXT NOT NULL,
@@ -19,14 +19,14 @@ steps = [
             UNIQUE(title_id)
         )
         """,
-        "DROP TABLE watch_history",
+        "DROP TABLE IF EXISTS watch_history",
     ),
     step(
-        "CREATE INDEX idx_title_id ON watch_history(title_id)",
-        "DROP INDEX idx_title_id",
+        "CREATE INDEX IF NOT EXISTS idx_title_id ON watch_history(title_id)",
+        "DROP INDEX IF EXISTS idx_title_id",
     ),
     step(
-        "CREATE INDEX idx_last_watched ON watch_history(last_watched_date DESC)",
-        "DROP INDEX idx_last_watched",
+        "CREATE INDEX IF NOT EXISTS idx_last_watched ON watch_history(last_watched_date DESC)",
+        "DROP INDEX IF EXISTS idx_last_watched",
     ),
 ]

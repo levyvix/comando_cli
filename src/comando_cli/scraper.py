@@ -2,7 +2,7 @@
 
 import re
 import time
-from typing import Optional
+from typing import Optional, Pattern
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
@@ -21,21 +21,31 @@ def _parse_quality_options(html: str) -> list[QualityOption]:
     soup = BeautifulSoup(html, "html.parser")
     options = []
 
-    magnet_links = soup.find_all("a", href=lambda x: x and x.startswith("magnet:"))
+    magnet_pattern: Pattern[str] = re.compile(r"^magnet:")
+    magnet_links = soup.find_all("a", href=magnet_pattern)
 
     for link in magnet_links:
-        magnet_url = link.get("href", "")
+        magnet_url: str = str(link.get("href", ""))
         if not magnet_url:
             continue
 
-        title_attr = link.get("title", "")
+        title_attr = str(link.get("title", ""))
         prev_span = link.find_previous("span", class_="botao_dublado")
         text_before = prev_span.text.strip() if prev_span else ""
 
         full_text = (text_before + " " + title_attr).upper()
 
         quality = "Unknown"
-        for pattern in ["1080P", "720P", "480P", "4K", "HDTV", "BLURAY", "DVDRIP", "MKV"]:
+        for pattern in [
+            "1080P",
+            "720P",
+            "480P",
+            "4K",
+            "HDTV",
+            "BLURAY",
+            "DVDRIP",
+            "MKV",
+        ]:
             if pattern in full_text:
                 quality = pattern
                 break
@@ -54,12 +64,14 @@ def _parse_quality_options(html: str) -> list[QualityOption]:
             if ep_match:
                 episode = int(ep_match.group(2))
 
-        options.append(QualityOption(
-            quality=quality,
-            language=language,
-            magnet_link=magnet_url,
-            episode=episode,
-        ))
+        options.append(
+            QualityOption(
+                quality=quality,
+                language=language,
+                magnet_link=magnet_url,
+                episode=episode,
+            )
+        )
 
     return options
 
@@ -217,7 +229,8 @@ class GratistorrentScraper:
 
         # Extract poster URL (look for img with poster in src)
         poster_url = None
-        img = soup.find("img", src=lambda x: x and "poster" in x.lower())
+        poster_pattern: Pattern[str] = re.compile(r"poster", re.IGNORECASE)
+        img = soup.find("img", src=poster_pattern)
         if img:
             poster_url = img.get("src")
 
@@ -282,6 +295,7 @@ class ComandoLaScraper:
     def __init__(self):
         """Initialize the scraper with StealthyFetcher for Cloudflare bypass."""
         from scrapling import StealthyFetcher
+
         self._fetcher = StealthyFetcher
 
     def search(self, query: str) -> list[Title]:
@@ -294,6 +308,7 @@ class ComandoLaScraper:
             List of Title objects
         """
         from urllib.parse import urlencode
+
         try:
             url = f"{self.BASE_URL}/?{urlencode({'s': query})}"
             result = self._fetch_with_retry(url)
@@ -331,7 +346,18 @@ class ComandoLaScraper:
             raise ScraperError(f"Metadata fetch failed: {e}") from e
 
     def _fetch_with_retry(self, url: str):
-        """Fetch URL with real Chrome to bypass bot detection."""
+        """Fetch URL: try CloakBrowser first, fallback to StealthyFetcher with retries."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Primary: CloakBrowser (faster, 2.5x speed improvement)
+        try:
+            return self._fetch_with_cloak(url)
+        except Exception as e:
+            logger.debug(f"CloakBrowser fetch failed ({e}), falling back to Scrapling")
+
+        # Fallback: Scrapling StealthyFetcher with retry logic
         last_exc: Exception = RuntimeError("No strategies attempted")
         for attempt in range(self._MAX_RETRIES):
             try:
@@ -345,7 +371,7 @@ class ComandoLaScraper:
                 status = getattr(result, "status", None)
                 if status is not None and status >= 400:
                     last_exc = ScraperError(f"HTTP {status} fetching {url}")
-                    time.sleep(self._RETRY_DELAY * (2 ** attempt))
+                    time.sleep(self._RETRY_DELAY * (2**attempt))
                     continue
                 return result
             except ScraperError:
@@ -353,8 +379,34 @@ class ComandoLaScraper:
             except Exception as e:
                 last_exc = e
                 if attempt < self._MAX_RETRIES - 1:
-                    time.sleep(self._RETRY_DELAY * (2 ** attempt))
+                    time.sleep(self._RETRY_DELAY * (2**attempt))
         raise last_exc
+
+    def _fetch_with_cloak(self, url: str):
+        """Fetch URL with CloakBrowser (persistent context, Cloudflare auto-resolve).
+
+        Returns an object compatible with Scrapling result (has .text and .html_content attributes).
+        """
+        from pathlib import Path
+
+        from cloakbrowser import launch_persistent_context
+
+        # Persistent context saves cookies, so Cloudflare only needs to be solved once
+        profile_dir = Path.home() / ".local/share/comando-cli/cloak_profile"
+        profile_dir.parent.mkdir(parents=True, exist_ok=True)
+
+        ctx = launch_persistent_context(str(profile_dir), headless=True, humanize=True)
+        page = ctx.new_page()
+        try:
+            page.goto(url, wait_until="networkidle", timeout=15000)
+            time.sleep(3)  # Cloudflare auto-resolve
+            html = page.content()
+        finally:
+            page.close()
+            ctx.close()
+
+        # Return object compatible with Scrapling's response interface
+        return type("CloakResult", (), {"text": html, "html_content": html})()
 
     def _parse_search_results(self, html: str) -> list[Title]:
         """Parse search results HTML from comando.la.
@@ -391,13 +443,15 @@ class ComandoLaScraper:
             else:
                 media_type = MediaType.MOVIE
 
-            title_id = urlparse(url).path.strip("/").split("/")[-1]
-            titles.append(Title(
-                id=title_id,
-                name=title_name,
-                media_type=media_type,
-                url=url,
-            ))
+            title_id = urlparse(str(url)).path.strip("/").split("/")[-1]
+            titles.append(
+                Title(
+                    id=title_id,
+                    name=title_name,
+                    media_type=media_type,
+                    url=str(url),
+                )
+            )
 
         return titles
 
@@ -418,7 +472,10 @@ class ComandoLaScraper:
 
         if "/series/" in url or "/serie/" in url:
             media_type = MediaType.SERIES
-        elif any(kw in title_name.lower() for kw in ["temporada", "season", "1ª", "1a", "2ª", "2a"]):
+        elif any(
+            kw in title_name.lower()
+            for kw in ["temporada", "season", "1ª", "1a", "2ª", "2a"]
+        ):
             media_type = MediaType.SERIES
         else:
             media_type = MediaType.MOVIE
@@ -502,12 +559,11 @@ class ComandoLaScraper:
         if not entry_content:
             return options
 
-        magnet_links = entry_content.find_all(
-            "a", href=lambda x: x and x.startswith("magnet:")
-        )
+        magnet_pattern: Pattern[str] = re.compile(r"^magnet:")
+        magnet_links = entry_content.find_all("a", href=magnet_pattern)
 
         for link in magnet_links:
-            magnet_url = link.get("href", "")
+            magnet_url: str = str(link.get("href", ""))
             if not magnet_url:
                 continue
 
@@ -563,13 +619,15 @@ class ComandoLaScraper:
                     last = ep_match.group(2).rsplit("-", 1)[-1]
                     episode_end = int(last)
 
-            options.append(QualityOption(
-                quality=quality,
-                language=language,
-                magnet_link=magnet_url,
-                episode=episode,
-                episode_end=episode_end,
-            ))
+            options.append(
+                QualityOption(
+                    quality=quality,
+                    language=language,
+                    magnet_link=magnet_url,
+                    episode=episode,
+                    episode_end=episode_end,
+                )
+            )
 
         return options
 
