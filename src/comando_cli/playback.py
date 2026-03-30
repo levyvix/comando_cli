@@ -175,34 +175,40 @@ setTimeout(() => {{ process.stderr.write('timeout\\n'); process.exit(1); }}, 900
 
         typer.echo(f"🎬 Starting playback: {display_name}")
         typer.echo("   (use > / ] in mpv to go to next episode)")
-        try:
-            result = subprocess.run(
-                [
-                    "webtorrent",
-                    magnet_link,
-                    "--mpv",
-                    "--playlist",
-                    "--select",
-                    str(start_index),
-                ],
-                check=False,
-            )
-            if result.returncode not in (0, 143):
-                raise PlaybackError(
-                    f"Playback process exited with code {result.returncode}"
+        with tempfile.TemporaryDirectory(prefix="webtorrent_") as tmp_dir:
+            try:
+                result = subprocess.run(
+                    [
+                        "webtorrent",
+                        magnet_link,
+                        "--mpv",
+                        "--playlist",
+                        "--select",
+                        str(start_index),
+                        "--out",
+                        tmp_dir,
+                    ],
+                    check=False,
                 )
-            typer.echo(f"✓ Playback ended: {title.name}")
-        except KeyboardInterrupt:
-            typer.echo("\n⏹️  Playback interrupted")
-        except FileNotFoundError as e:
-            raise PlaybackError(f"Failed to start webtorrent: {e}") from e
+                if result.returncode not in (0, 143):
+                    raise PlaybackError(
+                        f"Playback process exited with code {result.returncode}"
+                    )
+                typer.echo(f"✓ Playback ended: {title.name}")
+            except KeyboardInterrupt:
+                typer.echo("\n⏹️  Playback interrupted")
+            except FileNotFoundError as e:
+                raise PlaybackError(f"Failed to start webtorrent: {e}") from e
 
     def _stream_with_webtorrent_mpv(self, magnet_link: str) -> None:
-        try:
-            result = subprocess.run(["webtorrent", "--mpv", magnet_link], check=False)
-            if result.returncode not in (0, 143):
-                raise PlaybackError(
-                    f"Playback process exited with code {result.returncode}"
+        with tempfile.TemporaryDirectory(prefix="webtorrent_") as tmp_dir:
+            try:
+                result = subprocess.run(
+                    ["webtorrent", "--mpv", "--out", tmp_dir, magnet_link], check=False
                 )
-        except FileNotFoundError as e:
-            raise PlaybackError(f"Failed to start webtorrent: {e}") from e
+                if result.returncode not in (0, 143):
+                    raise PlaybackError(
+                        f"Playback process exited with code {result.returncode}"
+                    )
+            except FileNotFoundError as e:
+                raise PlaybackError(f"Failed to start webtorrent: {e}") from e
