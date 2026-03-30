@@ -1,6 +1,5 @@
 """Command-line interface for Comando CLI."""
 
-import logging
 from typing import Optional
 
 import typer
@@ -20,24 +19,6 @@ app = typer.Typer(
 # Initialize database
 config = ensure_directories()
 db = Database(config.data_dir / "history.db")
-
-
-# Startup hook: Process queued scrobbles
-def _process_startup_queue() -> None:
-    """Process any queued scrobbles on app startup."""
-    try:
-        from .tracktvapi import TrackTVAuth, TrackTVScrobbler
-
-        auth = TrackTVAuth()
-        if not auth.load_credentials():
-            return  # Silent - user hasn't authenticated
-
-        scrobbler = TrackTVScrobbler(config.data_dir / "history.db", auth)
-        pending = scrobbler.retry_queued_scrobbles()
-        if pending > 0:
-            typer.echo(f"✓ Synced {pending} pending scrobbles from queue")
-    except Exception as e:
-        logger.debug(f"Failed to process queue on startup: {e}")
 
 
 def _make_scraper():
@@ -368,5 +349,4 @@ def resume() -> None:
 
 
 if __name__ == "__main__":
-    _process_startup_queue()
     app()

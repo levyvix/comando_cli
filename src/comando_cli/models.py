@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class MediaType(str, Enum):
@@ -56,6 +56,10 @@ class TorrentFile(BaseModel):
 class WatchHistory(BaseModel):
     """Watch history record."""
 
+    model_config = ConfigDict(
+        serializers={datetime: lambda v: v.isoformat()}
+    )
+
     id: int = Field(default=0)  # SQLite row id
     title_id: str
     title_name: str
@@ -66,8 +70,3 @@ class WatchHistory(BaseModel):
     last_watched_date: datetime = Field(default_factory=datetime.now)
     duration_seconds: int = 0  # Video duration in seconds
     position_seconds: int = 0  # Last watched position in seconds
-
-    class Config:
-        """Pydantic config."""
-
-        json_encoders = {datetime: lambda v: v.isoformat()}

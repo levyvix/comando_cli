@@ -17,7 +17,6 @@ if sys.platform == "win32":
 
 def run_command(cmd, check=True, shell=False):
     """Executa comando e mostra output."""
-    cmd if isinstance(cmd, str) else " ".join(cmd)
     result = subprocess.run(cmd, check=check, text=True, shell=shell)
     return result.returncode == 0
 
@@ -108,8 +107,6 @@ def main() -> None:
         # Verifica se instalação funcionou
         if not check_uv_installed():
             sys.exit(1)
-    else:
-        pass
 
     # Instala CLI
     if not install_as_cli():
