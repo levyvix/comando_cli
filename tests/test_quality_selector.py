@@ -223,51 +223,60 @@ class TestSelectLanguage:
             assert result.language == "Portuguese"
             assert result.magnet_link == "magnet:1"  # First occurrence
 
+    def test_select_language_prefers_dual_audio_as_default(self):
+        """Test language prompt defaults to Dual Audio when available."""
+        options = [
+            QualityOption(quality="1080p", language="Legendado", magnet_link="magnet:1"),
+            QualityOption(quality="1080p", language="Dual Audio", magnet_link="magnet:2"),
+        ]
+
+        with patch("typer.prompt", return_value=2) as mock_prompt:
+            result = select_language(options)
+
+            mock_prompt.assert_called_once_with("Enter choice (number)", type=int, default=2)
+            assert result is not None
+            assert result.language == "Dual Audio"
+
+    def test_select_language_prefers_dublado_as_default(self):
+        """Test language prompt defaults to Dublado when available."""
+        options = [
+            QualityOption(quality="1080p", language="Legendado", magnet_link="magnet:1"),
+            QualityOption(quality="1080p", language="Dublado", magnet_link="magnet:2"),
+        ]
+
+        with patch("typer.prompt", return_value=2) as mock_prompt:
+            result = select_language(options)
+
+            mock_prompt.assert_called_once_with("Enter choice (number)", type=int, default=2)
+            assert result is not None
+            assert result.language == "Dublado"
+
 
 class TestSelectQualityAndLanguage:
     """Tests for select_quality_and_language function."""
 
-    def test_select_quality_and_language_full_flow(self, sample_title):
-        """Test full quality and language selection flow."""
-        with patch("typer.prompt", side_effect=[1, 1]):  # Quality 1 (1080p), Language 1 (Portuguese)
+    def test_select_quality_and_language_selects_with_fzf(self, sample_title):
+        """Test selecting magnet option via fzf output."""
+        fzf_output = "2. 1080p | English | Movie/All\n"
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = fzf_output
+
             result = select_quality_and_language(sample_title)
 
             assert result is not None
             assert result.quality == "1080p"
-            assert result.language == "Portuguese"
-
-    def test_select_quality_and_language_different_selections(self, sample_title):
-        """Test selecting different quality and language."""
-        with patch("typer.prompt", side_effect=[2, 2]):  # Quality 2 (720p), Language 2 (English)
-            result = select_quality_and_language(sample_title)
-
-            assert result is not None
-            assert result.quality == "720p"
             assert result.language == "English"
 
-    def test_select_quality_and_language_quality_cancelled_returns_none(self, sample_title):
-        """Test cancelling at quality step returns None."""
-        with patch("typer.prompt", side_effect=KeyboardInterrupt()):
+    def test_select_quality_and_language_fzf_cancel_returns_none(self, sample_title):
+        """Test returning None when fzf is cancelled."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 1
+            mock_run.return_value.stdout = ""
+
             result = select_quality_and_language(sample_title)
 
             assert result is None
-
-    def test_select_quality_and_language_language_cancelled_returns_none(self, sample_title):
-        """Test cancelling at language step returns None."""
-        # Quality selection succeeds, language selection fails
-        with patch("typer.prompt", side_effect=[1, KeyboardInterrupt()]):
-            result = select_quality_and_language(sample_title)
-
-            assert result is None
-
-    def test_select_quality_and_language_filters_by_quality(self, sample_title):
-        """Test language selection is filtered by selected quality."""
-        # Select 1080p quality, then first language option
-        with patch("typer.prompt", side_effect=[1, 1]):
-            result = select_quality_and_language(sample_title)
-
-            # Should filter to only 1080p options before language selection
-            assert result.quality == "1080p"
 
     def test_select_quality_and_language_no_options_returns_none(self, no_quality_title):
         """Test with no quality options returns None."""
@@ -275,20 +284,88 @@ class TestSelectQualityAndLanguage:
 
         assert result is None
 
-    def test_select_quality_and_language_single_option_both_steps(self, single_quality_title):
-        """Test with single option skips both prompts."""
-        with patch("typer.prompt") as mock_prompt:
+    def test_select_quality_and_language_single_option_auto_selects(self, single_quality_title):
+        """Test with single option auto-selects without fzf."""
+        with patch("subprocess.run") as mock_run:
             result = select_quality_and_language(single_quality_title)
 
-            # Should not prompt at all - only one quality and one language
-            mock_prompt.assert_not_called()
+            mock_run.assert_not_called()
             assert result is not None
             assert result.quality == "1080p"
 
+    def test_select_quality_and_language_fallback_numbered_selection(self, sample_title):
+        """Test fallback to numbered selection when fzf is not installed."""
+        with patch("subprocess.run", side_effect=FileNotFoundError()):
+            with patch("typer.prompt", return_value=3):
+                result = select_quality_and_language(sample_title)
+
+                assert result is not None
+                assert result.quality == "720p"
+                assert result.language == "Portuguese"
+
     def test_select_quality_and_language_returns_magnet_link(self, sample_title):
         """Test final selection includes magnet link."""
-        with patch("typer.prompt", side_effect=[1, 1]):
+        fzf_output = "1. 1080p | Portuguese | Movie/All\n"
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = fzf_output
             result = select_quality_and_language(sample_title)
 
             assert result.magnet_link is not None
             assert result.magnet_link.startswith("magnet:")
+
+    def test_select_quality_and_language_keeps_all_options(self):
+        """Test all options remain selectable, including non-dual."""
+        title = Title(
+            id="test-movie",
+            name="Test Movie",
+            media_type=MediaType.MOVIE,
+            url="https://example.com/test",
+            quality_options=[
+                QualityOption(quality="1080p", language="Legendado", magnet_link="magnet:1"),
+                QualityOption(quality="1080p", language="Dublado", magnet_link="magnet:2"),
+            ],
+        )
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = "1. 1080p | Legendado | Movie/All\n"
+            result = select_quality_and_language(title)
+
+            assert result is not None
+            assert result.quality == "1080p"
+            assert result.language == "Legendado"
+
+    def test_select_quality_and_language_shows_text_after_torrent(self):
+        """Test fzf menu displays raw label text after the TORRENT keyword."""
+        title = Title(
+            id="avatar",
+            name="Avatar",
+            media_type=MediaType.MOVIE,
+            url="https://example.com/avatar",
+            quality_options=[
+                QualityOption(
+                    quality="1080P",
+                    language="Dual Audio",
+                    magnet_link="magnet:1",
+                    display_name="AVATAR - FOGO E CINZAS DOWNLOAD TORRENT DUBLADO DUAL ÁUDIO 5.1 MKV 1080P",
+                ),
+                QualityOption(
+                    quality="4K",
+                    language="Legendado",
+                    magnet_link="magnet:2",
+                    display_name="AVATAR - FOGO E CINZAS DOWNLOAD TORRENT LEGENDADO 5.1 MP4 2160P ULTRA HD 4K HDR",
+                ),
+            ],
+        )
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            mock_run.return_value.stdout = "1. DUBLADO DUAL ÁUDIO 5.1 MKV 1080P | Movie/All\n"
+            result = select_quality_and_language(title)
+
+            assert result is not None
+            assert result.magnet_link == "magnet:1"
+            sent_input = mock_run.call_args.kwargs["input"]
+            assert "DUBLADO DUAL ÁUDIO 5.1 MKV 1080P | Movie/All" in sent_input
+            assert "LEGENDADO 5.1 MP4 2160P ULTRA HD 4K HDR | Movie/All" in sent_input

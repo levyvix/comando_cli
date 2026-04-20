@@ -28,7 +28,8 @@ class QualityOption(BaseModel):
     quality: str  # e.g., "720p", "1080p"
     language: str  # e.g., "Portuguese", "English"
     magnet_link: str
-    episode: Optional[int] = None      # First (or only) episode in this magnet
+    display_name: Optional[str] = None  # Raw source label for menu display
+    episode: Optional[int] = None  # First (or only) episode in this magnet
     episode_end: Optional[int] = None  # Last episode if magnet covers a range
 
 
@@ -56,9 +57,7 @@ class TorrentFile(BaseModel):
 class WatchHistory(BaseModel):
     """Watch history record."""
 
-    model_config = ConfigDict(
-        serializers={datetime: lambda v: v.isoformat()}
-    )
+    model_config = ConfigDict(serializers={datetime: lambda v: v.isoformat()})
 
     id: int = Field(default=0)  # SQLite row id
     title_id: str

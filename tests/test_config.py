@@ -21,7 +21,7 @@ class TestAppConfig:
         assert config.data_dir == home / ".local" / "share" / "comando-cli"
         assert config.verbose is False
         assert config.max_concurrent_downloads == 2
-        assert config.scraper == "comando_la"
+        assert config.scraper == "gratistorrent"
 
     def test_app_config_scraper_field(self):
         """Test AppConfig accepts custom scraper value."""

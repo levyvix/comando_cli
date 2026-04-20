@@ -59,7 +59,19 @@ def _play_consolidated(
 ) -> None:
     """Play a consolidated torrent as an mpv playlist starting from the requested episode."""
     typer.echo("📦 Consolidated torrent detected — resolving file list...")
-    torrent_files = player.list_torrent_files(quality_option.magnet_link)
+    try:
+        torrent_files = player.list_torrent_files(quality_option.magnet_link)
+    except Exception as e:
+        typer.echo(f"⚠️  Could not resolve file list ({e}). Playing from the start.")
+        player.play_torrent(quality_option.magnet_link, title_detail)
+        db.add_watch_record(
+            title_id=title_detail.id,
+            title_name=title_detail.name,
+            media_type=title_detail.media_type,
+            title_url=title_detail.url,
+            last_episode=episodes_to_play[0] if episodes_to_play else None,
+        )
+        return
 
     video_files = [f for f in torrent_files if _is_video_file(f.path)]
     if not video_files:

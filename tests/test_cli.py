@@ -265,54 +265,50 @@ class TestHistoryCommand:
 
     def test_history_shows_watch_records(self):
         """Test history displays watch records."""
-        with patch("comando_cli.cli.ensure_directories"):
-            with patch("comando_cli.cli.Database") as mock_db_class:
-                mock_db = MagicMock()
-                mock_db_class.return_value = mock_db
+        mock_db = MagicMock()
 
-                record1 = WatchHistory(
-                    id=1,
-                    title_id="movie-1",
-                    title_name="Test Movie",
-                    media_type=MediaType.MOVIE,
-                    last_episode=None,
-                    last_watched_date=datetime(2026, 2, 23, 10, 0),
-                    duration_seconds=7200,
-                    position_seconds=0,
-                )
+        record1 = WatchHistory(
+            id=1,
+            title_id="movie-1",
+            title_name="Test Movie",
+            media_type=MediaType.MOVIE,
+            last_episode=None,
+            last_watched_date=datetime(2026, 2, 23, 10, 0),
+            duration_seconds=7200,
+            position_seconds=0,
+        )
 
-                record2 = WatchHistory(
-                    id=2,
-                    title_id="series-1",
-                    title_name="Test Series",
-                    media_type=MediaType.SERIES,
-                    last_episode=5,
-                    last_watched_date=datetime(2026, 2, 23, 15, 30),
-                    duration_seconds=0,
-                    position_seconds=0,
-                )
+        record2 = WatchHistory(
+            id=2,
+            title_id="series-1",
+            title_name="Test Series",
+            media_type=MediaType.SERIES,
+            last_episode=5,
+            last_watched_date=datetime(2026, 2, 23, 15, 30),
+            duration_seconds=0,
+            position_seconds=0,
+        )
 
-                mock_db.get_all_watch_history.return_value = [record1, record2]
+        mock_db.get_all_watch_history.return_value = [record1, record2]
 
-                result = runner.invoke(app, ["history"])
+        with patch("comando_cli.cli.db", mock_db):
+            result = runner.invoke(app, ["history"])
 
-                assert result.exit_code == 0
-                assert "Test Movie" in result.stdout
-                assert "Test Series" in result.stdout
-                assert "Ep. 5" in result.stdout
+        assert result.exit_code == 0
+        assert "Test Movie" in result.stdout
+        assert "Test Series" in result.stdout
+        assert "Ep. 5" in result.stdout
 
     def test_history_empty(self):
         """Test history shows message when empty."""
-        with patch("comando_cli.cli.ensure_directories"):
-            with patch("comando_cli.cli.Database") as mock_db_class:
-                mock_db = MagicMock()
-                mock_db_class.return_value = mock_db
-                mock_db.get_all_watch_history.return_value = []
+        mock_db = MagicMock()
+        mock_db.get_all_watch_history.return_value = []
 
-                result = runner.invoke(app, ["history"])
+        with patch("comando_cli.cli.db", mock_db):
+            result = runner.invoke(app, ["history"])
 
-                assert result.exit_code == 0
-                assert "No watch history" in result.stdout
+        assert result.exit_code == 0
+        assert "No watch history" in result.stdout
 
 
 class TestResumeCommand:
@@ -320,41 +316,37 @@ class TestResumeCommand:
 
     def test_resume_shows_last_watched(self):
         """Test resume displays last watched title."""
-        with patch("comando_cli.cli.ensure_directories"):
-            with patch("comando_cli.cli.Database") as mock_db_class:
-                mock_db = MagicMock()
-                mock_db_class.return_value = mock_db
+        mock_db = MagicMock()
 
-                last_watch = WatchHistory(
-                    id=1,
-                    title_id="series-1",
-                    title_name="Test Series",
-                    media_type=MediaType.SERIES,
-                    last_episode=5,
-                    last_watched_date=datetime(2026, 2, 23, 15, 30),
-                    duration_seconds=0,
-                    position_seconds=0,
-                )
+        last_watch = WatchHistory(
+            id=1,
+            title_id="series-1",
+            title_name="Test Series",
+            media_type=MediaType.SERIES,
+            last_episode=5,
+            last_watched_date=datetime(2026, 2, 23, 15, 30),
+            duration_seconds=0,
+            position_seconds=0,
+        )
 
-                mock_db.get_last_watched.return_value = last_watch
+        mock_db.get_last_watched.return_value = last_watch
 
-                result = runner.invoke(app, ["resume"])
+        with patch("comando_cli.cli.db", mock_db):
+            result = runner.invoke(app, ["resume"])
 
-                assert result.exit_code == 0
-                assert "Resuming: Test Series" in result.stdout
+        assert result.exit_code == 0
+        assert "Resuming: Test Series" in result.stdout
 
     def test_resume_empty_history(self):
         """Test resume shows message when no history."""
-        with patch("comando_cli.cli.ensure_directories"):
-            with patch("comando_cli.cli.Database") as mock_db_class:
-                mock_db = MagicMock()
-                mock_db_class.return_value = mock_db
-                mock_db.get_last_watched.return_value = None
+        mock_db = MagicMock()
+        mock_db.get_last_watched.return_value = None
 
-                result = runner.invoke(app, ["resume"])
+        with patch("comando_cli.cli.db", mock_db):
+            result = runner.invoke(app, ["resume"])
 
-                assert result.exit_code == 0
-                assert "No watch history to resume" in result.stdout
+        assert result.exit_code == 0
+        assert "No watch history to resume" in result.stdout
 
 
 class TestAppInitialization:

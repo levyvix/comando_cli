@@ -1,11 +1,32 @@
 """Quality and language selection menus."""
 
+import re
 import subprocess
+import unicodedata
 from typing import Optional
 
 import typer
 
 from .models import QualityOption, Title
+
+
+def _normalize_text(text: str) -> str:
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return text.upper()
+
+
+def _is_dual_audio(language: str) -> bool:
+    return "DUAL" in _normalize_text(language)
+
+
+def _is_dual_or_dubbed(language: str) -> bool:
+    normalized = _normalize_text(language)
+    return (
+        "DUAL" in normalized
+        or "DUBLADO" in normalized
+        or "DUBBED" in normalized
+    )
 
 
 def select_quality(title: Title) -> Optional[QualityOption]:
@@ -72,6 +93,11 @@ def select_language(options: list[QualityOption]) -> Optional[QualityOption]:
 
     language_list = list(languages.keys())
 
+    preferred_index = next(
+        (idx for idx, language in enumerate(language_list) if _is_dual_or_dubbed(language)),
+        None,
+    )
+
     if len(language_list) == 1:
         typer.echo(f"✓ Language: {language_list[0]}")
         return languages[language_list[0]]
@@ -81,7 +107,16 @@ def select_language(options: list[QualityOption]) -> Optional[QualityOption]:
         typer.echo(f"  {i}. {language}")
 
     try:
-        choice = typer.prompt("Enter choice (number)", type=int)
+        if preferred_index is not None:
+            default_choice = preferred_index + 1
+            choice = typer.prompt(
+                "Enter choice (number)",
+                type=int,
+                default=default_choice,
+            )
+        else:
+            choice = typer.prompt("Enter choice (number)", type=int)
+
         if choice < 1 or choice > len(language_list):
             typer.echo("Invalid choice")
             return None
@@ -95,7 +130,7 @@ def select_language(options: list[QualityOption]) -> Optional[QualityOption]:
 
 
 def select_quality_and_language(title: Title, episode: Optional[int] = None) -> Optional[QualityOption]:
-    """Full quality and language selection flow.
+    """Select a magnet option from all available variants.
 
     Args:
         title: Title object with quality options
@@ -120,23 +155,61 @@ def select_quality_and_language(title: Title, episode: Optional[int] = None) -> 
             typer.echo("❌ No quality options available")
         return None
 
-    # Create a temporary title with filtered options for selection
-    filtered_title = title.model_copy(update={"quality_options": quality_options})
+    if len(quality_options) == 1:
+        selected = quality_options[0]
+        typer.echo(f"✓ Magnet: {selected.quality} {selected.language}")
+        return selected
 
-    # Step 1: Quality selection
-    quality_option = select_quality(filtered_title)
-    if not quality_option:
+    labels: list[str] = []
+    label_to_option: dict[str, QualityOption] = {}
+
+    def _menu_text(option: QualityOption) -> str:
+        raw = (option.display_name or "").strip()
+        if raw:
+            match = re.search(r"\bTORRENT\b\s*(.+)", raw, flags=re.IGNORECASE)
+            if match and match.group(1).strip():
+                return match.group(1).strip()
+            return raw
+        return f"{option.quality} | {option.language}"
+
+    for idx, option in enumerate(quality_options, 1):
+        if option.episode is not None:
+            episode_text = (
+                f"E{option.episode:02d}-E{option.episode_end:02d}"
+                if option.episode_end is not None
+                else f"E{option.episode:02d}"
+            )
+        else:
+            episode_text = "Movie/All"
+
+        label = f"{idx}. {_menu_text(option)} | {episode_text}"
+        labels.append(label)
+        label_to_option[label] = option
+
+    try:
+        proc = subprocess.run(
+            ["fzf", "--prompt=Select magnet> ", "--height=50%", "--reverse"],
+            input="\n".join(labels),
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            selected_label = proc.stdout.strip()
+            return label_to_option.get(selected_label)
         return None
+    except FileNotFoundError:
+        typer.echo("\n🧲 Select magnet:")
+        for idx, label in enumerate(labels, 1):
+            typer.echo(f"  {idx}. {label}")
+        try:
+            choice = typer.prompt("Enter choice (number)", type=int)
+            if 1 <= choice <= len(quality_options):
+                return quality_options[choice - 1]
+        except (ValueError, KeyboardInterrupt):
+            typer.echo("Cancelled")
+            return None
 
-    # Filter options by selected quality
-    same_quality_options = [
-        opt for opt in quality_options if opt.quality == quality_option.quality
-    ]
-
-    # Step 2: Language selection
-    language_option = select_language(same_quality_options)
-
-    return language_option
+    return None
 
 
 def select_title(results: list[Title]) -> Optional[Title]:

@@ -3,6 +3,7 @@
 import logging
 import re
 import time
+import unicodedata
 from typing import Optional, Pattern
 from urllib.parse import urlparse
 
@@ -12,6 +13,27 @@ from scrapling import Fetcher
 from .models import Episode, MediaType, QualityOption, Title
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_text(text: str) -> str:
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return text.upper()
+
+
+def _classify_language(context_text: str) -> str:
+    normalized = _normalize_text(context_text)
+    if "DUAL" in normalized:
+        return "Dual Audio"
+    if "DUBLADO" in normalized or ".DUB." in normalized:
+        return "Dublado"
+    if "LEGENDADO" in normalized or ".LEG." in normalized:
+        return "Legendado"
+    if "PORTUGUESE" in normalized or "PORTUGUES" in normalized:
+        return "Portuguese"
+    if "ENGLISH" in normalized or "INGLES" in normalized:
+        return "English"
+    return "Unknown"
 
 
 def _parse_quality_options(html: str) -> list[QualityOption]:
@@ -36,7 +58,7 @@ def _parse_quality_options(html: str) -> list[QualityOption]:
         prev_span = link.find_previous("span", class_="botao_dublado")
         text_before = prev_span.text.strip() if prev_span else ""
 
-        full_text = (text_before + " " + title_attr).upper()
+        full_text = _normalize_text(text_before + " " + title_attr)
 
         quality = "Unknown"
         for pattern in [
@@ -53,11 +75,14 @@ def _parse_quality_options(html: str) -> list[QualityOption]:
                 quality = pattern
                 break
 
-        language = "Portuguese"
-        for pattern in ["DUBLADO", "LEGENDADO", "DUAL", "ENGLISH", "PORTUGUESE"]:
-            if pattern in full_text:
-                language = pattern.capitalize()
-                break
+        # Prefer link title metadata for language detection.
+        # On gratistorrent some legendado links can be under a stale previous
+        # span from the dual section, so mixing both sources may misclassify.
+        title_language = _classify_language(title_attr)
+        if title_language != "Unknown":
+            language = title_language
+        else:
+            language = _classify_language(full_text)
 
         episode = None
         dn_match = re.search(r"dn=([^&]+)", magnet_url)
@@ -72,6 +97,7 @@ def _parse_quality_options(html: str) -> list[QualityOption]:
                 quality=quality,
                 language=language,
                 magnet_link=magnet_url,
+                display_name=title_attr or text_before or None,
                 episode=episode,
             )
         )
@@ -571,7 +597,7 @@ class ComandoLaScraper:
                 continue
 
             # Quality from link text ("1080p", "720p", "2160p 4K", "Download Magnet")
-            link_text = link.get_text(strip=True).upper()
+            link_text = _normalize_text(link.get_text(strip=True))
             quality = "Unknown"
             for q in ["2160P", "4K", "1080P", "720P", "480P"]:
                 if q in link_text:
@@ -589,27 +615,22 @@ class ComandoLaScraper:
                             break
 
             # Language from surrounding <p> and <strong> text and dn= param
-            context_text = ""
+            context_parts: list[str] = []
             parent_p = link.find_parent("p")
             if parent_p:
-                context_text = parent_p.get_text(" ", strip=True).upper()
+                context_parts.append(parent_p.get_text(" ", strip=True))
 
             # Walk up to find language headers (e.g. <strong>DUAL ÁUDIO</strong>)
             prev = link.find_previous("strong")
             if prev:
-                context_text += " " + prev.get_text(strip=True).upper()
+                context_parts.append(prev.get_text(strip=True))
 
             dn_match = re.search(r"dn=([^&]+)", magnet_url)
             dn_upper = unquote(dn_match.group(1)).upper() if dn_match else ""
-            context_text += " " + dn_upper
+            if dn_upper:
+                context_parts.append(dn_upper)
 
-            language = "Portuguese"
-            if "DUAL" in context_text:
-                language = "Dual"
-            elif "DUBLADO" in context_text or ".DUB." in context_text:
-                language = "Dubbed"
-            elif "LEGENDADO" in context_text or ".LEG." in context_text:
-                language = "Subtitled"
+            language = _classify_language(" ".join(context_parts))
 
             # Episode range from magnet dn= param
             # Handles: S02E04, S02E01-02-03, S02E05-06, S02E07-08-09
@@ -627,6 +648,7 @@ class ComandoLaScraper:
                     quality=quality,
                     language=language,
                     magnet_link=magnet_url,
+                    display_name=parent_p.get_text(" ", strip=True) if parent_p else link.get_text(" ", strip=True),
                     episode=episode,
                     episode_end=episode_end,
                 )

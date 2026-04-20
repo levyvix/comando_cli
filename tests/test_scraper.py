@@ -246,6 +246,28 @@ class TestMetadataFetch:
             assert len(result.quality_options) > 0
             assert result.quality_options[0].language.lower() in ["dublado", "english", "portuguese"]
 
+    def test_fetch_metadata_prefers_link_title_when_prev_span_is_stale(self, scraper):
+        """Ensure legendado links are not misclassified by stale previous spans."""
+        html = """
+        <h1>Test Movie</h1>
+        <h2>LINKS DUAL ÁUDIO</h2>
+        <span class="botao_dublado">DUBLADO DUAL ÁUDIO 1080P</span>
+        <a href="magnet:?xt=urn:btih:test1" title="DUBLADO DUAL ÁUDIO 1080P">DOWNLOAD</a>
+        <h2>LINKS LEGENDADOS</h2>
+        <a href="magnet:?xt=urn:btih:test2" title="LEGENDADO 720P">DOWNLOAD</a>
+        """
+
+        with patch.object(scraper.fetcher, 'get') as mock_get:
+            mock_response = MagicMock()
+            mock_response.html_content = html
+            mock_get.return_value = mock_response
+
+            result = scraper.fetch_metadata("https://example.com/test/")
+
+            assert len(result.quality_options) == 2
+            assert result.quality_options[0].language == "Dual Audio"
+            assert result.quality_options[1].language == "Legendado"
+
     def test_fetch_metadata_returns_none_on_failure(self, scraper):
         """Test fetch_metadata returns None on failure."""
         with patch.object(scraper.fetcher, 'get') as mock_get:
@@ -453,6 +475,29 @@ class TestComandoLaScraperTitlePage:
         result = scraper._parse_title_page(html, "https://comando.la/show-temporada/")
         assert result.media_type == MediaType.SERIES
 
+    def test_parse_title_page_detects_dual_audio_language(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = """
+        <h1>Test Movie</h1>
+        <div class="entry-content">
+            <p><strong>DUAL ÁUDIO</strong></p>
+            <p><a href="magnet:?xt=urn:btih:abc123&dn=Test.Movie.DUAL.AUDIO.1080P.mkv">1080P</a></p>
+        </div>
+        """
+        result = scraper._parse_title_page(html, "https://comando.la/filmes/test/")
+        assert result.quality_options[0].language == "Dual Audio"
+
+    def test_parse_title_page_detects_dublado_language(self):
+        scraper = ComandoLaScraper.__new__(ComandoLaScraper)
+        html = """
+        <h1>Test Movie</h1>
+        <div class="entry-content">
+            <p><a href="magnet:?xt=urn:btih:def456&dn=Test.Movie.DUBLADO.1080P.mkv">1080P</a></p>
+        </div>
+        """
+        result = scraper._parse_title_page(html, "https://comando.la/filmes/test/")
+        assert result.quality_options[0].language == "Dublado"
+
 
 class TestComandoLaScraperIntegration:
     """Integration tests for ComandoLaScraper search/fetch_metadata with mocked session."""
@@ -462,9 +507,12 @@ class TestComandoLaScraperIntegration:
         mock_fetcher = MagicMock()
         mock_response = MagicMock()
         mock_response.html_content = html
+        mock_response.text = html
         mock_response.status = 200
         mock_fetcher.fetch.return_value = mock_response
         scraper._fetcher = mock_fetcher
+        # Disable CloakBrowser fallback so _fetcher is used directly
+        scraper._fetch_with_cloak = MagicMock(side_effect=Exception("cloak disabled"))
         return scraper, mock_fetcher
 
     def test_search_calls_correct_url(self):
@@ -485,6 +533,7 @@ class TestComandoLaScraperIntegration:
         mock_fetcher.fetch.side_effect = Exception("network error")
         scraper._fetcher = mock_fetcher
         scraper._MAX_RETRIES = 1
+        scraper._fetch_with_cloak = MagicMock(side_effect=Exception("cloak disabled"))
         with pytest.raises(ScraperError, match="Search failed"):
             scraper.search("test")
 
@@ -494,6 +543,7 @@ class TestComandoLaScraperIntegration:
         mock_fetcher.fetch.side_effect = Exception("network error")
         scraper._fetcher = mock_fetcher
         scraper._MAX_RETRIES = 1
+        scraper._fetch_with_cloak = MagicMock(side_effect=Exception("cloak disabled"))
         with pytest.raises(ScraperError, match="Metadata fetch failed"):
             scraper.fetch_metadata("https://comando.la/filmes/test/")
 
