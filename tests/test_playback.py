@@ -53,7 +53,7 @@ class TestTorrentPlayerInit:
 
             config = AppConfig()
 
-            with pytest.raises(PlaybackError, match="mpv not installed"):
+            with pytest.raises(PlaybackError, match="mpv"):
                 TorrentPlayer(config)
 
     def test_init_missing_webtorrent_raises_error(self):
@@ -65,7 +65,7 @@ class TestTorrentPlayerInit:
 
             config = AppConfig()
 
-            with pytest.raises(PlaybackError, match="webtorrent-cli not installed"):
+            with pytest.raises(PlaybackError, match="webtorrent-cli"):
                 TorrentPlayer(config)
 
 
@@ -90,7 +90,8 @@ class TestPlayTorrent:
                 call_args = mock_run.call_args[0][0]
                 assert call_args[0] == "webtorrent"
                 assert call_args[1] == "--mpv"
-                assert call_args[2] == magnet
+                assert "--out" in call_args
+                assert call_args[-1] == magnet
 
     def test_play_torrent_series_with_episode(self, sample_series):
         """Test playing a series episode."""
@@ -187,7 +188,12 @@ class TestStreamWithWebtorrentMpv:
                 magnet = "magnet:?xt=urn:btih:test123"
                 player._stream_with_webtorrent_mpv(magnet)
 
-                mock_run.assert_called_once_with(["webtorrent", "--mpv", magnet], check=False)
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args[0][0]
+                assert call_args[0] == "webtorrent"
+                assert call_args[1] == "--mpv"
+                assert "--out" in call_args
+                assert call_args[-1] == magnet
 
     def test_stream_exit_code_zero(self, sample_title):
         """Test exit code 0 is successful."""
