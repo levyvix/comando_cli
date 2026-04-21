@@ -7,6 +7,7 @@ import os
 import platform
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # Fix encoding para Windows suportar emojis
@@ -15,9 +16,9 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding="utf-8")
 
 
-def run_command(cmd, check=True, shell=False):
+def run_command(cmd, check=True, shell=False, cwd=None):
     """Executa comando e mostra output."""
-    result = subprocess.run(cmd, check=check, text=True, shell=shell)
+    result = subprocess.run(cmd, check=check, text=True, shell=shell, cwd=cwd)
     return result.returncode == 0
 
 
@@ -81,9 +82,46 @@ def install_uv() -> bool:
 
 def install_as_cli() -> bool:
     """Instala comando-cli (com) como ferramenta CLI global."""
-    # Instala usando uv tool install --reinstall (força rebuild mesmo se já instalado)
-    if not run_command(["uv", "tool", "install", "--reinstall", "."]):
-        return False
+    # Fonte explícita tem prioridade total (ex.: testes ou mirrors).
+    install_source = os.getenv("COMANDO_CLI_INSTALL_SOURCE")
+    if install_source:
+        if not run_command(["uv", "tool", "install", "--reinstall", install_source]):
+            return False
+    else:
+        repo_url = os.getenv(
+            "COMANDO_CLI_REPO_URL", "https://github.com/levyvix/comando_cli.git"
+        )
+        repo_ref = os.getenv("COMANDO_CLI_REF", "master")
+
+        # Clona o repositório temporariamente e instala usando "." no clone.
+        git_available = run_command(["git", "--version"], check=False)
+        if git_available:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                clone_dir = Path(tmp_dir) / "comando_cli"
+                if not run_command(
+                    [
+                        "git",
+                        "clone",
+                        "--depth",
+                        "1",
+                        "--branch",
+                        repo_ref,
+                        repo_url,
+                        str(clone_dir),
+                    ],
+                    check=False,
+                ):
+                    return False
+                if not run_command(
+                    ["uv", "tool", "install", "--reinstall", "."],
+                    cwd=str(clone_dir),
+                ):
+                    return False
+        else:
+            # Fallback sem git local.
+            fallback_source = f"git+{repo_url}@{repo_ref}"
+            if not run_command(["uv", "tool", "install", "--reinstall", fallback_source]):
+                return False
 
     # Adiciona ao GITHUB_PATH se estiver no GitHub Actions
     github_path = os.getenv("GITHUB_PATH")
