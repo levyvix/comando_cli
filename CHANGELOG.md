@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/levyvix/comando_cli/compare/v0.2.0...v0.2.1) (2026-04-21)
+
+
+### Bug Fixes
+
+* **installer:** install from temp repo clone instead of cwd ([b148a30](https://github.com/levyvix/comando_cli/commit/b148a308d69c529320fa590c2d1417a1a635466f))
+
 ## [0.2.0](https://github.com/levyvix/comando_cli/compare/v0.1.0...v0.2.0) (2026-04-21)
 
 
