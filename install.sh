@@ -21,7 +21,7 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ ! -f "${INSTALLER_PATH}" ]]; then
-  RAW_BASE="${COMANDO_CLI_RAW_BASE:-https://raw.githubusercontent.com/levyvix/comando_cli/main}"
+  RAW_BASE="${COMANDO_CLI_RAW_BASE:-https://raw.githubusercontent.com/levyvix/comando_cli/master}"
   INSTALLER_URL="${RAW_BASE}/install-cli.py"
   TMP_DIR="$(mktemp -d)"
   INSTALLER_PATH="${TMP_DIR}/install-cli.py"

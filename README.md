@@ -23,7 +23,7 @@ Stream movies and TV series from gratistorrent.com directly from your terminal.
 ### Quick install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/levyvix/comando_cli/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/levyvix/comando_cli/master/install.sh | bash
 ```
 
 ### Prerequisites
