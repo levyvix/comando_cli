@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/levyvix/comando_cli/compare/v0.2.1...v0.2.2) (2026-04-21)
+
+
+### Bug Fixes
+
+* **update:** detect latest version across tags and pyproject ([9857b8a](https://github.com/levyvix/comando_cli/commit/9857b8aa0ca4b4697b7a9bdad402355f0ebc7ad2))
+
 ## [0.2.1](https://github.com/levyvix/comando_cli/compare/v0.2.0...v0.2.1) (2026-04-21)
 
 
