@@ -1,18 +1,70 @@
 """Web scrapers for torrent sites using Scrapling."""
 
+import hashlib
+import json
 import logging
+import os
 import re
 import time
 import unicodedata
+from pathlib import Path
+from typing import Any
 from typing import Optional, Pattern
 from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from scrapling import Fetcher
 
-from .models import Episode, MediaType, QualityOption, Title
+from comando_cli.config import ensure_directories
+from comando_cli.models import Episode, MediaType, QualityOption, Title
 
 logger = logging.getLogger(__name__)
+_CACHE_TTL_SECONDS = 3600
+
+
+class _TorrentResultsCache:
+    """Simple file-based JSON cache with TTL."""
+
+    def __init__(self, namespace: str, ttl_seconds: int = _CACHE_TTL_SECONDS):
+        base_cache_dir = ensure_directories().cache_dir / "torrent-results"
+        self.cache_dir = base_cache_dir / namespace
+        self.ttl_seconds = ttl_seconds
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _cache_path(self, key: str) -> Path:
+        digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+        return self.cache_dir / f"{digest}.json"
+
+    def get(self, key: str) -> tuple[bool, Any]:
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return False, None
+
+        path = self._cache_path(key)
+        if not path.exists():
+            return False, None
+
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            cached_at = float(payload.get("cached_at", 0))
+            age = time.time() - cached_at
+            if age > self.ttl_seconds:
+                path.unlink(missing_ok=True)
+                return False, None
+            return True, payload.get("value")
+        except Exception:
+            path.unlink(missing_ok=True)
+            return False, None
+
+    def set(self, key: str, value: Any) -> None:
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return
+
+        path = self._cache_path(key)
+        payload = {"cached_at": time.time(), "value": value}
+        try:
+            path.write_text(json.dumps(payload), encoding="utf-8")
+        except Exception:
+            logger.debug("Failed to write cache file: %s", path, exc_info=True)
 
 
 def _normalize_text(text: str) -> str:
@@ -114,6 +166,14 @@ class GratistorrentScraper:
     def __init__(self):
         """Initialize the scraper with Scrapling Fetcher."""
         self.fetcher = Fetcher
+        self._cache = _TorrentResultsCache("gratistorrent")
+
+    def _get_cache(self) -> _TorrentResultsCache:
+        cache = getattr(self, "_cache", None)
+        if cache is None:
+            cache = _TorrentResultsCache("gratistorrent")
+            self._cache = cache
+        return cache
 
     def search(self, query: str) -> list[Title]:
         """Search for titles on gratistorrent.com.
@@ -125,11 +185,17 @@ class GratistorrentScraper:
             List of Title objects
         """
         try:
+            cache_key = f"search:{query.strip().lower()}"
+            found, cached = self._get_cache().get(cache_key)
+            if found:
+                return [Title.model_validate(item) for item in (cached or [])]
+
             result = self.fetcher.get(
                 self.BASE_URL + self.SEARCH_ENDPOINT, params={"s": query}
             )
 
             if not result:
+                self._get_cache().set(cache_key, [])
                 return []
 
             # Get HTML content from the Scrapling response
@@ -140,6 +206,9 @@ class GratistorrentScraper:
             )
 
             titles = self._parse_search_results(html)
+            self._get_cache().set(
+                cache_key, [title.model_dump(mode="json") for title in titles]
+            )
             return titles
 
         except Exception as e:
@@ -155,9 +224,15 @@ class GratistorrentScraper:
             Title object with metadata, or None if fetch fails
         """
         try:
+            cache_key = f"metadata:{title_url}"
+            found, cached = self._get_cache().get(cache_key)
+            if found:
+                return Title.model_validate(cached) if cached else None
+
             result = self.fetcher.get(title_url)
 
             if not result:
+                self._get_cache().set(cache_key, None)
                 return None
 
             # Get HTML content from the Scrapling response
@@ -168,6 +243,9 @@ class GratistorrentScraper:
             )
 
             title = self._parse_title_page(html, title_url)
+            self._get_cache().set(
+                cache_key, title.model_dump(mode="json") if title else None
+            )
             return title
 
         except Exception as e:
@@ -326,6 +404,14 @@ class ComandoLaScraper:
         from scrapling import StealthyFetcher
 
         self._fetcher = StealthyFetcher
+        self._cache = _TorrentResultsCache("comando-la")
+
+    def _get_cache(self) -> _TorrentResultsCache:
+        cache = getattr(self, "_cache", None)
+        if cache is None:
+            cache = _TorrentResultsCache("comando-la")
+            self._cache = cache
+        return cache
 
     def search(self, query: str) -> list[Title]:
         """Search for titles on comando.la.
@@ -339,16 +425,26 @@ class ComandoLaScraper:
         from urllib.parse import urlencode
 
         try:
+            cache_key = f"search:{query.strip().lower()}"
+            found, cached = self._get_cache().get(cache_key)
+            if found:
+                return [Title.model_validate(item) for item in (cached or [])]
+
             url = f"{self.BASE_URL}/?{urlencode({'s': query})}"
             result = self._fetch_with_retry(url)
             if not result:
+                self._get_cache().set(cache_key, [])
                 return []
             html = (
                 getattr(result, "html_content", None)
                 or getattr(result, "text", None)
                 or ""
             )
-            return self._parse_search_results(html)
+            parsed = self._parse_search_results(html)
+            self._get_cache().set(
+                cache_key, [title.model_dump(mode="json") for title in parsed]
+            )
+            return parsed
         except Exception as e:
             raise ScraperError(f"Search failed: {e}") from e
 
@@ -362,15 +458,25 @@ class ComandoLaScraper:
             Title object with metadata, or None if fetch fails
         """
         try:
+            cache_key = f"metadata:{title_url}"
+            found, cached = self._get_cache().get(cache_key)
+            if found:
+                return Title.model_validate(cached) if cached else None
+
             result = self._fetch_with_retry(title_url)
             if not result:
+                self._get_cache().set(cache_key, None)
                 return None
             html = (
                 getattr(result, "html_content", None)
                 or getattr(result, "text", None)
                 or ""
             )
-            return self._parse_title_page(html, title_url)
+            parsed = self._parse_title_page(html, title_url)
+            self._get_cache().set(
+                cache_key, parsed.model_dump(mode="json") if parsed else None
+            )
+            return parsed
         except Exception as e:
             raise ScraperError(f"Metadata fetch failed: {e}") from e
 

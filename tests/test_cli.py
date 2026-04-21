@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
+import comando_cli.cli as cli
 from comando_cli.cli import app
 from comando_cli.models import MediaType, QualityOption, Title, WatchHistory
 
@@ -259,6 +260,60 @@ class TestWatchCommand:
                         assert result.exit_code == 0
                         assert "No quality selected" in result.stdout
 
+    def test_watch_return_to_search_restarts_flow(self):
+        """Test watch loops back to search when playback requests it."""
+        with patch("comando_cli.cli._make_scraper") as mock_scraper_class:
+            with patch("comando_cli.cli.select_title") as mock_select_title:
+                with patch("comando_cli.cli._play_title") as mock_play_title:
+                    mock_scraper = MagicMock()
+                    mock_scraper_class.return_value = mock_scraper
+
+                    title = Title(
+                        id="series-1",
+                        name="Test Series",
+                        media_type=MediaType.SERIES,
+                        url="https://example.com/series-1",
+                    )
+                    detail = Title(
+                        id="series-1",
+                        name="Test Series",
+                        media_type=MediaType.SERIES,
+                        url="https://example.com/series-1",
+                        quality_options=[],
+                    )
+
+                    mock_scraper.search.return_value = [title]
+                    mock_scraper.fetch_metadata.return_value = detail
+                    mock_select_title.return_value = title
+                    mock_play_title.side_effect = [True, False]
+
+                    result = runner.invoke(app, ["watch", "series"])
+
+                    assert result.exit_code == 0
+                    assert "Returning to search" in result.stdout
+                    assert mock_scraper.search.call_count == 2
+                    assert mock_play_title.call_count == 2
+
+
+class TestPostPlaybackMenu:
+    """Tests for post-playback actions."""
+
+    def test_select_post_playback_action_with_fzf(self):
+        """Test selecting action from fzf output."""
+        with patch("comando_cli.cli.select_with_fzf", return_value="Próximo"):
+
+            action = cli._select_post_playback_action()
+
+            assert action == "proximo"
+
+    def test_select_post_playback_action_fallback_prompt(self):
+        """Test fallback numeric menu when fzf is unavailable."""
+        with patch("comando_cli.cli.select_with_fzf", return_value=None):
+            with patch("typer.prompt", return_value=2):
+                action = cli._select_post_playback_action()
+
+                assert action == "anterior"
+
 
 class TestHistoryCommand:
     """Tests for history command."""
@@ -372,3 +427,17 @@ class TestAppInitialization:
 
         assert result.exit_code == 0
         assert "Comando CLI" in result.stdout or "Stream" in result.stdout
+
+    def test_global_comando_flag_forces_comando_la_scraper(self):
+        """Test --comando global flag overrides configured scraper."""
+        with patch("comando_cli.cli.GratistorrentScraper") as mock_gt_class:
+            with patch("comando_cli.cli.ComandoLaScraper") as mock_comando_class:
+                mock_scraper = MagicMock()
+                mock_scraper.search.return_value = []
+                mock_comando_class.return_value = mock_scraper
+
+                result = runner.invoke(app, ["--comando", "search", "test"])
+
+                assert result.exit_code == 0
+                mock_comando_class.assert_called_once()
+                mock_gt_class.assert_not_called()

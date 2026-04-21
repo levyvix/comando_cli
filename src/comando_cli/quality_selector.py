@@ -1,13 +1,13 @@
 """Quality and language selection menus."""
 
 import re
-import subprocess
 import unicodedata
 from typing import Optional
 
 import typer
 
-from .models import QualityOption, Title
+from comando_cli.fuzzy import select_with_fzf
+from comando_cli.models import QualityOption, Title, TorrentFile
 
 
 def _normalize_text(text: str) -> str:
@@ -186,28 +186,20 @@ def select_quality_and_language(title: Title, episode: Optional[int] = None) -> 
         labels.append(label)
         label_to_option[label] = option
 
+    selected_label = select_with_fzf(labels, prompt="Select magnet> ", height="50%")
+    if selected_label is not None:
+        return label_to_option.get(selected_label)
+
+    typer.echo("\n🧲 Select magnet:")
+    for idx, label in enumerate(labels, 1):
+        typer.echo(f"  {idx}. {label}")
     try:
-        proc = subprocess.run(
-            ["fzf", "--prompt=Select magnet> ", "--height=50%", "--reverse"],
-            input="\n".join(labels),
-            capture_output=True,
-            text=True,
-        )
-        if proc.returncode == 0 and proc.stdout.strip():
-            selected_label = proc.stdout.strip()
-            return label_to_option.get(selected_label)
+        choice = typer.prompt("Enter choice (number)", type=int)
+        if 1 <= choice <= len(quality_options):
+            return quality_options[choice - 1]
+    except (ValueError, KeyboardInterrupt):
+        typer.echo("Cancelled")
         return None
-    except FileNotFoundError:
-        typer.echo("\n🧲 Select magnet:")
-        for idx, label in enumerate(labels, 1):
-            typer.echo(f"  {idx}. {label}")
-        try:
-            choice = typer.prompt("Enter choice (number)", type=int)
-            if 1 <= choice <= len(quality_options):
-                return quality_options[choice - 1]
-        except (ValueError, KeyboardInterrupt):
-            typer.echo("Cancelled")
-            return None
 
     return None
 
@@ -228,31 +220,103 @@ def select_title(results: list[Title]) -> Optional[Title]:
         return results[0]
 
     labels = [f"{t.name} ({t.media_type.value})" for t in results]
-    input_text = "\n".join(labels)
-
-    try:
-        proc = subprocess.run(
-            ["fzf", "--prompt=Select title> ", "--height=40%", "--reverse"],
-            input=input_text,
-            capture_output=True,
-            text=True,
-        )
-        if proc.returncode != 0 or not proc.stdout.strip():
-            return None
-        selected_label = proc.stdout.strip()
+    selected_label = select_with_fzf(labels, prompt="Select title> ", height="40%")
+    if selected_label is not None:
         for i, label in enumerate(labels):
             if label == selected_label:
                 return results[i]
-    except FileNotFoundError:
-        # fzf not available, fallback to numbered list
-        typer.echo("\n🔍 Select a title:")
-        for i, label in enumerate(labels, 1):
-            typer.echo(f"  {i}. {label}")
-        try:
-            choice = typer.prompt("Enter choice (number)", type=int)
-            if 1 <= choice <= len(results):
-                return results[choice - 1]
-        except (ValueError, KeyboardInterrupt):
-            pass
+
+    # fzf not available, cancelled, or invalid selection: fallback to numbered list
+    typer.echo("\n🔍 Select a title:")
+    for i, label in enumerate(labels, 1):
+        typer.echo(f"  {i}. {label}")
+    try:
+        choice = typer.prompt("Enter choice (number)", type=int)
+        if 1 <= choice <= len(results):
+            return results[choice - 1]
+    except (ValueError, KeyboardInterrupt):
+        pass
+
+    return None
+
+
+def select_torrent_file(files: list[TorrentFile]) -> Optional[TorrentFile]:
+    """Interactive selection for the file to start playback from."""
+    if not files:
+        return None
+    if len(files) == 1:
+        return files[0]
+
+    labels: list[str] = []
+    label_to_file: dict[str, TorrentFile] = {}
+    for i, torrent_file in enumerate(files, 1):
+        ep = f"E{torrent_file.episode:02d}" if torrent_file.episode is not None else "--"
+        filename = torrent_file.path.split("/")[-1]
+        label = f"{i}. {ep} | {filename}"
+        labels.append(label)
+        label_to_file[label] = torrent_file
+
+    selected_label = select_with_fzf(labels, prompt="Select torrent/file> ", height="50%")
+    if selected_label is not None:
+        return label_to_file.get(selected_label)
+
+    typer.echo("\n🧲 Select torrent/file:")
+    for idx, label in enumerate(labels, 1):
+        typer.echo(f"  {idx}. {label}")
+    try:
+        choice = typer.prompt("Enter choice (number)", type=int)
+        if 1 <= choice <= len(files):
+            return files[choice - 1]
+    except (ValueError, KeyboardInterrupt):
+        typer.echo("Cancelled")
+        return None
+
+    return None
+
+
+def select_episode_magnet(options: list[QualityOption]) -> Optional[QualityOption]:
+    """Interactive selection for series episode magnets."""
+    if not options:
+        return None
+    if len(options) == 1:
+        return options[0]
+
+    sorted_options = sorted(
+        options,
+        key=lambda opt: (
+            opt.episode if opt.episode is not None else 9999,
+            opt.episode_end if opt.episode_end is not None else 9999,
+            opt.display_name or "",
+        ),
+    )
+
+    labels: list[str] = []
+    label_to_option: dict[str, QualityOption] = {}
+    for idx, option in enumerate(sorted_options, 1):
+        if option.episode is not None and option.episode_end is not None:
+            ep_text = f"E{option.episode:02d}-E{option.episode_end:02d}"
+        elif option.episode is not None:
+            ep_text = f"E{option.episode:02d}"
+        else:
+            ep_text = "ALL"
+        name = (option.display_name or f"{option.quality} {option.language}").strip()
+        label = f"{idx}. {ep_text} | {name}"
+        labels.append(label)
+        label_to_option[label] = option
+
+    selected_label = select_with_fzf(labels, prompt="Select episode/torrent> ", height="50%")
+    if selected_label is not None:
+        return label_to_option.get(selected_label)
+
+    typer.echo("\n🧲 Select episode/torrent:")
+    for idx, label in enumerate(labels, 1):
+        typer.echo(f"  {idx}. {label}")
+    try:
+        choice = typer.prompt("Enter choice (number)", type=int)
+        if 1 <= choice <= len(sorted_options):
+            return sorted_options[choice - 1]
+    except (ValueError, KeyboardInterrupt):
+        typer.echo("Cancelled")
+        return None
 
     return None

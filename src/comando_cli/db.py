@@ -5,8 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .migrations import run_migrations
-from .models import MediaType, WatchHistory
+from comando_cli.migrations import run_migrations
+from comando_cli.models import MediaType, WatchHistory
 
 
 class Database:

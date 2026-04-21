@@ -89,7 +89,8 @@ class TestPlayTorrent:
                 mock_run.assert_called_once()
                 call_args = mock_run.call_args[0][0]
                 assert call_args[0] == "webtorrent"
-                assert call_args[1] == "--mpv"
+                assert "--mpv" in call_args
+                assert "--playlist" in call_args
                 assert "--out" in call_args
                 assert call_args[-1] == magnet
 
@@ -191,7 +192,8 @@ class TestStreamWithWebtorrentMpv:
                 mock_run.assert_called_once()
                 call_args = mock_run.call_args[0][0]
                 assert call_args[0] == "webtorrent"
-                assert call_args[1] == "--mpv"
+                assert "--mpv" in call_args
+                assert "--playlist" in call_args
                 assert "--out" in call_args
                 assert call_args[-1] == magnet
 

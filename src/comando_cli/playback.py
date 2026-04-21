@@ -10,8 +10,8 @@ from typing import Optional
 
 import typer
 
-from .config import AppConfig
-from .models import Title, TorrentFile
+from comando_cli.config import AppConfig
+from comando_cli.models import Title, TorrentFile
 
 _VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv", ".flv", ".webm"}
 
@@ -204,7 +204,15 @@ setTimeout(() => {{ process.stderr.write('timeout\\n'); process.exit(1); }}, 900
         with tempfile.TemporaryDirectory(prefix="webtorrent_") as tmp_dir:
             try:
                 result = subprocess.run(
-                    ["webtorrent", "--mpv", "--out", tmp_dir, magnet_link], check=False
+                    [
+                        "webtorrent",
+                        "--mpv",
+                        "--playlist",
+                        "--out",
+                        tmp_dir,
+                        magnet_link,
+                    ],
+                    check=False,
                 )
                 if result.returncode not in (0, 143):
                     raise PlaybackError(

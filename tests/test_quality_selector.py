@@ -257,10 +257,8 @@ class TestSelectQualityAndLanguage:
 
     def test_select_quality_and_language_selects_with_fzf(self, sample_title):
         """Test selecting magnet option via fzf output."""
-        fzf_output = "2. 1080p | English | Movie/All\n"
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            mock_run.return_value.stdout = fzf_output
+        fzf_output = "2. 1080p | English | Movie/All"
+        with patch("comando_cli.quality_selector.select_with_fzf", return_value=fzf_output):
 
             result = select_quality_and_language(sample_title)
 
@@ -270,11 +268,10 @@ class TestSelectQualityAndLanguage:
 
     def test_select_quality_and_language_fzf_cancel_returns_none(self, sample_title):
         """Test returning None when fzf is cancelled."""
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 1
-            mock_run.return_value.stdout = ""
+        with patch("comando_cli.quality_selector.select_with_fzf", return_value=None):
 
-            result = select_quality_and_language(sample_title)
+            with patch("typer.prompt", side_effect=KeyboardInterrupt()):
+                result = select_quality_and_language(sample_title)
 
             assert result is None
 
@@ -286,16 +283,16 @@ class TestSelectQualityAndLanguage:
 
     def test_select_quality_and_language_single_option_auto_selects(self, single_quality_title):
         """Test with single option auto-selects without fzf."""
-        with patch("subprocess.run") as mock_run:
+        with patch("comando_cli.quality_selector.select_with_fzf") as mock_fzf:
             result = select_quality_and_language(single_quality_title)
 
-            mock_run.assert_not_called()
+            mock_fzf.assert_not_called()
             assert result is not None
             assert result.quality == "1080p"
 
     def test_select_quality_and_language_fallback_numbered_selection(self, sample_title):
         """Test fallback to numbered selection when fzf is not installed."""
-        with patch("subprocess.run", side_effect=FileNotFoundError()):
+        with patch("comando_cli.quality_selector.select_with_fzf", return_value=None):
             with patch("typer.prompt", return_value=3):
                 result = select_quality_and_language(sample_title)
 
@@ -305,10 +302,8 @@ class TestSelectQualityAndLanguage:
 
     def test_select_quality_and_language_returns_magnet_link(self, sample_title):
         """Test final selection includes magnet link."""
-        fzf_output = "1. 1080p | Portuguese | Movie/All\n"
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            mock_run.return_value.stdout = fzf_output
+        fzf_output = "1. 1080p | Portuguese | Movie/All"
+        with patch("comando_cli.quality_selector.select_with_fzf", return_value=fzf_output):
             result = select_quality_and_language(sample_title)
 
             assert result.magnet_link is not None
@@ -327,9 +322,10 @@ class TestSelectQualityAndLanguage:
             ],
         )
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            mock_run.return_value.stdout = "1. 1080p | Legendado | Movie/All\n"
+        with patch(
+            "comando_cli.quality_selector.select_with_fzf",
+            return_value="1. 1080p | Legendado | Movie/All",
+        ):
             result = select_quality_and_language(title)
 
             assert result is not None
@@ -359,13 +355,12 @@ class TestSelectQualityAndLanguage:
             ],
         )
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            mock_run.return_value.stdout = "1. DUBLADO DUAL ÁUDIO 5.1 MKV 1080P | Movie/All\n"
+        with patch("comando_cli.quality_selector.select_with_fzf") as mock_fzf:
+            mock_fzf.return_value = "1. DUBLADO DUAL ÁUDIO 5.1 MKV 1080P | Movie/All"
             result = select_quality_and_language(title)
 
             assert result is not None
             assert result.magnet_link == "magnet:1"
-            sent_input = mock_run.call_args.kwargs["input"]
-            assert "DUBLADO DUAL ÁUDIO 5.1 MKV 1080P | Movie/All" in sent_input
-            assert "LEGENDADO 5.1 MP4 2160P ULTRA HD 4K HDR | Movie/All" in sent_input
+            sent_labels = mock_fzf.call_args.args[0]
+            assert "1. DUBLADO DUAL ÁUDIO 5.1 MKV 1080P | Movie/All" in sent_labels
+            assert "2. LEGENDADO 5.1 MP4 2160P ULTRA HD 4K HDR | Movie/All" in sent_labels
