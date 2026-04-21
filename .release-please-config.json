@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "python",
+      "package-name": "comando-cli",
+      "include-component-in-tag": false,
+      "extra-files": [
+        "pyproject.toml",
+        "src/comando_cli/__init__.py"
+      ]
+    }
+  }
+}

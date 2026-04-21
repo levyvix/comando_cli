@@ -2,7 +2,7 @@
 
 ## Commit Policy
 
-Use Conventional Commits for all commits so the automated version bump workflow can determine release type.
+Use Conventional Commits for all commits so the `release-please` workflow can determine release type.
 
 Required format:
 
@@ -16,7 +16,7 @@ Examples:
 - `fix(scraper): handle empty search results`
 - `chore(ci): adjust version bump workflow`
 
-Version bump mapping used by `.github/workflows/bump-version.yml`:
+Release mapping used by `.github/workflows/release-please.yml`:
 
 - `major`: commit contains `BREAKING CHANGE` or `!` in type/scope, e.g. `feat(api)!: change response format`
 - `minor`: commit type `feat`
