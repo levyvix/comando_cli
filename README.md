@@ -20,6 +20,12 @@ Stream movies and TV series from gratistorrent.com directly from your terminal.
 
 ## Installation
 
+### Quick install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/levyvix/comando_cli/main/install.sh | bash
+```
+
 ### Prerequisites
 
 1. **Install Python 3.12+** if not already installed
@@ -47,7 +53,7 @@ Clone and install the project:
 
 ```bash
 cd ~/path/to/comando_cli
-python3 install_cli.py
+bash install.sh
 ```
 
 This installs the `com` command globally in your Python environment.
