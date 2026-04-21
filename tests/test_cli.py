@@ -417,6 +417,7 @@ class TestAppInitialization:
 
         assert result.exit_code == 0
         assert "search" in result.stdout
+        assert "update" in result.stdout
         assert "watch" in result.stdout
         assert "history" in result.stdout
         assert "resume" in result.stdout
@@ -441,3 +442,46 @@ class TestAppInitialization:
                 assert result.exit_code == 0
                 mock_comando_class.assert_called_once()
                 mock_gt_class.assert_not_called()
+
+
+class TestVersionAndUpdate:
+    """Tests for version and update CLI flows."""
+
+    def test_version_flag(self):
+        """Test global --version shows current package version."""
+        result = runner.invoke(app, ["--version"])
+
+        assert result.exit_code == 0
+        assert "comando-cli" in result.stdout
+        assert cli.__version__ in result.stdout
+
+    def test_update_check_when_up_to_date(self):
+        """Test update --check reports latest when no update exists."""
+        with patch("comando_cli.cli._fetch_remote_version", return_value=cli.__version__):
+            result = runner.invoke(app, ["update", "--check"])
+
+        assert result.exit_code == 0
+        assert "Current version" in result.stdout
+        assert "Remote version" in result.stdout
+        assert "latest version" in result.stdout
+
+    def test_update_check_when_update_available(self):
+        """Test update --check reports availability without installing."""
+        with patch("comando_cli.cli._fetch_remote_version", return_value="0.1.9"):
+            with patch("comando_cli.cli._run_remote_installer") as mock_install:
+                result = runner.invoke(app, ["update", "--check"])
+
+        assert result.exit_code == 0
+        assert "Update available" in result.stdout
+        mock_install.assert_not_called()
+
+    def test_update_runs_installer_with_yes(self):
+        """Test update installs when newer version exists and -y is provided."""
+        with patch("comando_cli.cli._fetch_remote_version", return_value="0.1.9"):
+            with patch("comando_cli.cli._run_remote_installer") as mock_install:
+                result = runner.invoke(app, ["update", "-y"])
+
+        assert result.exit_code == 0
+        assert "Installing update" in result.stdout
+        assert "Update finished" in result.stdout
+        mock_install.assert_called_once()

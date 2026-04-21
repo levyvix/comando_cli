@@ -1,9 +1,16 @@
 """Command-line interface for Comando CLI."""
 
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from typing import Optional
 
+import requests
 import typer
 
+from comando_cli import __version__
 from comando_cli.config import ensure_directories
 from comando_cli.db import Database
 from comando_cli.episode_selector import parse_episode_syntax
@@ -19,7 +26,8 @@ from comando_cli.quality_selector import (
 from comando_cli.scraper import ComandoLaScraper, GratistorrentScraper, ScraperError
 
 app = typer.Typer(
-    help="Comando CLI - Stream movies and TV series from the command line."
+    help="Comando CLI - Stream movies and TV series from the command line.",
+    invoke_without_command=True,
 )
 
 # Initialize database
@@ -33,6 +41,12 @@ _POST_PLAYBACK_ACTIONS = [
     ("search", "Voltar para busca"),
     ("exit", "Sair"),
 ]
+REMOTE_PYPROJECT_URL = (
+    "https://raw.githubusercontent.com/levyvix/comando_cli/master/pyproject.toml"
+)
+REMOTE_INSTALLER_URL = (
+    "https://raw.githubusercontent.com/levyvix/comando_cli/master/install-cli.py"
+)
 
 
 def _make_scraper():
@@ -50,10 +64,105 @@ def main(
         "--comando",
         help="Use o site comando.la como fonte de busca neste comando.",
     ),
+    version: bool = typer.Option(
+        False,
+        "--version",
+        is_eager=True,
+        help="Show version and exit.",
+    ),
 ) -> None:
     """Global CLI options."""
     global _scraper_override
+    if version:
+        typer.echo(f"comando-cli {__version__}")
+        raise typer.Exit()
     _scraper_override = "comando_la" if comando else None
+
+
+def _extract_remote_version(pyproject_text: str) -> Optional[str]:
+    """Extract [project] version from pyproject.toml content."""
+    match = re.search(r'^version\s*=\s*"([^"]+)"\s*$', pyproject_text, re.MULTILINE)
+    return match.group(1) if match else None
+
+
+def _version_key(version: str) -> tuple[tuple[int, int | str], ...]:
+    """Normalize versions for a simple semantic-ish comparison."""
+    tokens = re.split(r"[.\-+]", version)
+    key: list[tuple[int, int | str]] = []
+    for token in tokens:
+        if token.isdigit():
+            key.append((0, int(token)))
+        else:
+            key.append((1, token.lower()))
+    return tuple(key)
+
+
+def _fetch_remote_version() -> str:
+    """Read latest published version from repository pyproject.toml."""
+    response = requests.get(REMOTE_PYPROJECT_URL, timeout=10)
+    response.raise_for_status()
+    remote_version = _extract_remote_version(response.text)
+    if not remote_version:
+        raise ValueError("Could not parse version from remote pyproject.toml")
+    return remote_version
+
+
+def _run_remote_installer() -> None:
+    """Download and run the upstream installer script."""
+    response = requests.get(REMOTE_INSTALLER_URL, timeout=15)
+    response.raise_for_status()
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        installer_path = Path(tmp_dir) / "install-cli.py"
+        installer_path.write_text(response.text, encoding="utf-8")
+        subprocess.run([sys.executable, str(installer_path)], check=True)
+
+
+@app.command()
+def update(
+    check: bool = typer.Option(
+        False,
+        "--check",
+        help="Only check if a newer version is available.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "-y",
+        "--yes",
+        help="Update without confirmation prompt.",
+    ),
+) -> None:
+    """Check for updates and install the latest version."""
+    typer.echo(f"Current version: {__version__}")
+    try:
+        remote_version = _fetch_remote_version()
+    except (requests.RequestException, ValueError) as e:
+        typer.echo(f"❌ Could not check remote version: {e}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Remote version: {remote_version}")
+    has_update = _version_key(remote_version) > _version_key(__version__)
+
+    if not has_update:
+        typer.echo("✅ You are already on the latest version.")
+        return
+
+    typer.echo("⬆️  Update available.")
+    if check:
+        return
+
+    if not yes and not typer.confirm("Install update now?", default=True):
+        typer.echo("Update canceled.")
+        return
+
+    typer.echo("📦 Installing update...")
+    try:
+        _run_remote_installer()
+    except (requests.RequestException, OSError, subprocess.CalledProcessError) as e:
+        typer.echo(f"❌ Update failed: {e}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo("✅ Update finished. Run `com --version` to verify.")
 
 
 @app.command()
