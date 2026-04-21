@@ -44,6 +44,7 @@ _POST_PLAYBACK_ACTIONS = [
 REMOTE_PYPROJECT_URL = (
     "https://raw.githubusercontent.com/levyvix/comando_cli/master/pyproject.toml"
 )
+REMOTE_TAGS_URL = "https://api.github.com/repos/levyvix/comando_cli/tags?per_page=50"
 REMOTE_INSTALLER_URL = (
     "https://raw.githubusercontent.com/levyvix/comando_cli/master/install-cli.py"
 )
@@ -85,9 +86,14 @@ def _extract_remote_version(pyproject_text: str) -> Optional[str]:
     return match.group(1) if match else None
 
 
+def _normalize_version(version: str) -> str:
+    """Normalize version string for comparisons."""
+    return version.strip().removeprefix("v")
+
+
 def _version_key(version: str) -> tuple[tuple[int, int | str], ...]:
     """Normalize versions for a simple semantic-ish comparison."""
-    tokens = re.split(r"[.\-+]", version)
+    tokens = re.split(r"[.\-+]", _normalize_version(version))
     key: list[tuple[int, int | str]] = []
     for token in tokens:
         if token.isdigit():
@@ -98,13 +104,38 @@ def _version_key(version: str) -> tuple[tuple[int, int | str], ...]:
 
 
 def _fetch_remote_version() -> str:
-    """Read latest published version from repository pyproject.toml."""
-    response = requests.get(REMOTE_PYPROJECT_URL, timeout=10)
-    response.raise_for_status()
-    remote_version = _extract_remote_version(response.text)
-    if not remote_version:
-        raise ValueError("Could not parse version from remote pyproject.toml")
-    return remote_version
+    """Read latest version from repository tags and pyproject on master."""
+    discovered_versions: list[str] = []
+
+    try:
+        response = requests.get(REMOTE_TAGS_URL, timeout=10)
+        response.raise_for_status()
+        tags_payload = response.json()
+        if isinstance(tags_payload, list):
+            for tag in tags_payload:
+                if not isinstance(tag, dict):
+                    continue
+                tag_name = tag.get("name")
+                if not isinstance(tag_name, str):
+                    continue
+                normalized = _normalize_version(tag_name)
+                if re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?", normalized):
+                    discovered_versions.append(normalized)
+    except (requests.RequestException, ValueError, TypeError):
+        pass
+
+    try:
+        response = requests.get(REMOTE_PYPROJECT_URL, timeout=10)
+        response.raise_for_status()
+        remote_version = _extract_remote_version(response.text)
+        if remote_version:
+            discovered_versions.append(remote_version)
+    except (requests.RequestException, TypeError, ValueError):
+        pass
+
+    if not discovered_versions:
+        raise ValueError("Could not parse version from remote sources")
+    return max(discovered_versions, key=_version_key)
 
 
 def _run_remote_installer() -> None:

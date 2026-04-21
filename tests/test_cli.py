@@ -467,7 +467,7 @@ class TestVersionAndUpdate:
 
     def test_update_check_when_update_available(self):
         """Test update --check reports availability without installing."""
-        with patch("comando_cli.cli._fetch_remote_version", return_value="0.1.9"):
+        with patch("comando_cli.cli._fetch_remote_version", return_value="999.0.0"):
             with patch("comando_cli.cli._run_remote_installer") as mock_install:
                 result = runner.invoke(app, ["update", "--check"])
 
@@ -477,7 +477,7 @@ class TestVersionAndUpdate:
 
     def test_update_runs_installer_with_yes(self):
         """Test update installs when newer version exists and -y is provided."""
-        with patch("comando_cli.cli._fetch_remote_version", return_value="0.1.9"):
+        with patch("comando_cli.cli._fetch_remote_version", return_value="999.0.0"):
             with patch("comando_cli.cli._run_remote_installer") as mock_install:
                 result = runner.invoke(app, ["update", "-y"])
 
@@ -485,3 +485,54 @@ class TestVersionAndUpdate:
         assert "Installing update" in result.stdout
         assert "Update finished" in result.stdout
         mock_install.assert_called_once()
+
+    def test_fetch_remote_version_prefers_latest_semver_tag(self):
+        """Test remote version lookup picks highest semantic tag from GitHub tags."""
+        mock_tags = [
+            {"name": "v0.1.1"},
+            {"name": "v0.1.9"},
+            {"name": "v0.1.10"},
+            {"name": "docs"},
+        ]
+        tags_response = MagicMock()
+        tags_response.json.return_value = mock_tags
+        tags_response.raise_for_status.return_value = None
+
+        pyproject_response = MagicMock()
+        pyproject_response.raise_for_status.return_value = None
+        pyproject_response.text = '[project]\nversion = "0.1.0"\n'
+
+        with patch(
+            "comando_cli.cli.requests.get",
+            side_effect=[tags_response, pyproject_response],
+        ):
+            remote_version = cli._fetch_remote_version()
+
+        assert remote_version == "0.1.10"
+
+    def test_fetch_remote_version_falls_back_to_pyproject(self):
+        """Test remote version lookup falls back to pyproject when tag lookup fails."""
+        tags_error = cli.requests.RequestException("tags unavailable")
+        pyproject_response = MagicMock()
+        pyproject_response.raise_for_status.return_value = None
+        pyproject_response.text = '[project]\nversion = "0.2.0"\n'
+
+        with patch("comando_cli.cli.requests.get", side_effect=[tags_error, pyproject_response]):
+            remote_version = cli._fetch_remote_version()
+
+        assert remote_version == "0.2.0"
+
+    def test_fetch_remote_version_uses_highest_between_tags_and_pyproject(self):
+        """Test remote version lookup picks higher version between tags and pyproject."""
+        tags_response = MagicMock()
+        tags_response.raise_for_status.return_value = None
+        tags_response.json.return_value = [{"name": "v0.2.0"}]
+
+        pyproject_response = MagicMock()
+        pyproject_response.raise_for_status.return_value = None
+        pyproject_response.text = '[project]\nversion = "0.2.1"\n'
+
+        with patch("comando_cli.cli.requests.get", side_effect=[tags_response, pyproject_response]):
+            remote_version = cli._fetch_remote_version()
+
+        assert remote_version == "0.2.1"
